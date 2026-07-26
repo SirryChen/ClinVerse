@@ -1,0 +1,301 @@
+{
+  "name": "Gastroesophageal Reflux Disease (GERD)",
+  "remarks": [
+    "Models GERD in the US population.",
+    "Epidemiology: ACG 2013 clinical guidelines; El-Serag et al. Gut 2014.",
+    "Population prevalence ~20% (weekly GERD symptoms in US adults).",
+    "Hospital-admitted patients ~45-48% have GERD as secondary diagnosis (MIMIC).",
+    "This reflects selection bias: ill patients more likely to have GI comorbidities.",
+    "Supports MIMIC conditioning via mimic_force_gerd attribute.",
+    "Treatment per ACG 2022 guidelines: PPI first-line.",
+    "Complications: Barrett's esophagus ~10-15% of GERD patients.",
+    "SNOMED: 235595009 (Gastroesophageal reflux disease), 302576003 (GERD with esophagitis).",
+    "Medications: omeprazole (RxNorm 7646), pantoprazole (606282), esomeprazole (283921)."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "GERD_Onset",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_gerd",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 25,
+        "unit": "years"
+      },
+      "direct_transition": "Population_Gate"
+    },
+
+    "Population_Gate": {
+      "type": "Simple",
+      "remarks": [
+        "ACG: ~20% of US adults have weekly GERD symptoms. We model diagnosed GERD.",
+        "~10-15% of US adults will be formally diagnosed over lifetime."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "GERD_Onset",
+          "distribution": 0.15
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.85
+        }
+      ]
+    },
+
+    "GERD_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "gerd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "235595009",
+          "display": "Gastroesophageal reflux disease (disorder)"
+        }
+      ],
+      "direct_transition": "GERD_Encounter"
+    },
+
+    "GERD_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "gerd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "GERD_Symptom"
+    },
+
+    "GERD_Symptom": {
+      "type": "Symptom",
+      "symptom": "heartburn",
+      "cause": "GERD",
+      "exact": { "quantity": 5 },
+      "direct_transition": "Choose_GERD_Treatment"
+    },
+
+    "Choose_GERD_Treatment": {
+      "type": "Simple",
+      "remarks": [
+        "ACG 2022: PPI therapy is mainstay. Step-up therapy: H2 blocker then PPI.",
+        "~75% of diagnosed GERD patients receive PPI therapy."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Omeprazole",
+          "distribution": 0.35
+        },
+        {
+          "transition": "Prescribe_Pantoprazole",
+          "distribution": 0.25
+        },
+        {
+          "transition": "Prescribe_Esomeprazole",
+          "distribution": 0.15
+        },
+        {
+          "transition": "Prescribe_Famotidine",
+          "distribution": 0.10
+        },
+        {
+          "transition": "Lifestyle_GERD",
+          "distribution": 0.15
+        }
+      ]
+    },
+
+    "Prescribe_Omeprazole": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ppi_medication",
+      "reason": "gerd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "7646",
+          "display": "Omeprazole 20 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "GERD_Encounter_End"
+    },
+
+    "Prescribe_Pantoprazole": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ppi_medication",
+      "reason": "gerd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "606282",
+          "display": "Pantoprazole 40 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "GERD_Encounter_End"
+    },
+
+    "Prescribe_Esomeprazole": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ppi_medication",
+      "reason": "gerd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "283921",
+          "display": "Esomeprazole 40 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "GERD_Encounter_End"
+    },
+
+    "Prescribe_Famotidine": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "h2_blocker",
+      "reason": "gerd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "310756",
+          "display": "Famotidine 20 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "GERD_Encounter_End"
+    },
+
+    "Lifestyle_GERD": {
+      "type": "Procedure",
+      "reason": "gerd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "281078001",
+          "display": "Education about diet (procedure)"
+        }
+      ],
+      "duration": { "low": 15, "high": 30, "unit": "minutes" },
+      "direct_transition": "GERD_Encounter_End"
+    },
+
+    "GERD_Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Check_Barretts"
+    },
+
+    "Check_Barretts": {
+      "type": "Simple",
+      "remarks": [
+        "Barrett's esophagus develops in ~10-15% of GERD patients over time.",
+        "Modeled as a one-time low-probability transition."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Barretts_Esophagus",
+          "distribution": 0.12
+        },
+        {
+          "transition": "Chronic_GERD_Delay",
+          "distribution": 0.88
+        }
+      ]
+    },
+
+    "Barretts_Esophagus": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "barretts_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "36495004",
+          "display": "Barrett's esophagus (disorder)"
+        }
+      ],
+      "direct_transition": "EGD_Procedure"
+    },
+
+    "EGD_Procedure": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "barretts_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "EGD"
+    },
+
+    "EGD": {
+      "type": "Procedure",
+      "reason": "barretts_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "386831004",
+          "display": "Esophagogastroduodenoscopy (procedure)"
+        }
+      ],
+      "duration": { "low": 20, "high": 40, "unit": "minutes" },
+      "direct_transition": "EGD_End"
+    },
+
+    "EGD_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_GERD_Delay"
+    },
+
+    "Chronic_GERD_Delay": {
+      "type": "Delay",
+      "range": { "low": 10, "high": 14, "unit": "months" },
+      "direct_transition": "Chronic_GERD_Encounter"
+    },
+
+    "Chronic_GERD_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "gerd_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Chronic_GERD_End"
+    },
+
+    "Chronic_GERD_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_GERD_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

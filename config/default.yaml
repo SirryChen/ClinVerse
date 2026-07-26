@@ -1,0 +1,183 @@
+# One entry per pluggable LLM backend used for the patient_actor / doctor
+# simulators (both share the same client+model pair today). Switch the active
+# one via default_llm_provider — same pattern as datasets/default_dataset below.
+llm_providers:
+  gpt-4o-mini: &gpt4o_mini_provider
+    api_key: "${CLINVERSE_API_KEY:-EMPTY}"
+    base_url: "${CLINVERSE_BASE_URL:-https://api.openai.com/v1}"
+    # Keep every chat role on the same model so training and evaluation are
+    # comparable across datasets and can be reproduced on other benchmarks.
+    patient_actor_model: gpt-4o-mini
+    doctor_model: gpt-4o-mini
+    lab_model: gpt-4o-mini
+  # Reuse gpt-4o-mini's API credentials and compatible endpoint. Only the
+  # served model name changes, so all patient/doctor/lab roles stay aligned.
+  gpt-5.6-luna:
+    <<: *gpt4o_mini_provider
+    patient_actor_model: gpt-5.6-luna
+    doctor_model: gpt-5.6-luna
+    lab_model: gpt-5.6-luna
+  # Reuse gpt-4o-mini's API credentials and compatible endpoint. Only the
+  # served model name changes, so all patient/doctor/lab roles stay aligned.
+  gpt-5.6-sol:
+    <<: *gpt4o_mini_provider
+    patient_actor_model: gpt-5.6-sol
+    doctor_model: gpt-5.6-sol
+    lab_model: gpt-5.6-sol
+  # Claude is served through the same OpenAI-compatible gateway as gpt-4o-mini.
+  claude-sonnet-4-6:
+    <<: *gpt4o_mini_provider
+    patient_actor_model: claude-sonnet-4-6
+    doctor_model: claude-sonnet-4-6
+    lab_model: claude-sonnet-4-6
+  deepseek-v4-flash:
+    api_key: "${CLINVERSE_API_KEY:-EMPTY}"
+    base_url: "${CLINVERSE_BASE_URL:-https://api.openai.com/v1}"
+    patient_actor_model: ds-v4-flash
+    doctor_model: ds-v4-flash
+    timeout: 60
+  qwen3.6-27b:
+    api_key: "${SII_API_KEY:-EMPTY}"
+    base_url: "${SII_BASE_URL:-http://localhost:8003/v1}"
+    patient_actor_model: Qwen3.6-27B
+    doctor_model: Qwen3.6-27B
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+  qwen3-32b-vllm:
+    # Self-hosted: vllm serve ./weight/Qwen3-32B --served-model-name Qwen3-32B
+    # --host 0.0.0.0 --port 8000 --tensor-parallel-size 2 --enable-auto-tool-choice
+    # --tool-call-parser hermes --gpu-memory-utilization 0.7. vLLM's OpenAI-
+    # compatible server doesn't check the key, but the client still requires
+    # a non-empty string.
+    api_key: "EMPTY"
+    base_url: http://localhost:8000/v1
+    timeout: 20
+    patient_actor_model: Qwen3-32B
+    doctor_model: Qwen3-32B
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+  qwen3-14b-vllm:
+    # Self-hosted: vllm serve ./weight/Qwen3-14B --served-model-name Qwen3-14B
+    # --host 0.0.0.0 --port 8001 --tensor-parallel-size 2 --enable-auto-tool-choice
+    # --tool-call-parser hermes --gpu-memory-utilization 0.3. Co-located with
+    # qwen3-32b-vllm on the same machine, different port/GPU split.
+    api_key: "EMPTY"
+    base_url: http://localhost:8001/v1
+    timeout: 10
+    patient_actor_model: Qwen3-14B
+    doctor_model: Qwen3-14B
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+  qwen3-8b-vllm:
+    # Self-hosted: vllm serve ./weight/Qwen3-14B --served-model-name Qwen3-14B
+    # --host 0.0.0.0 --port 8001 --tensor-parallel-size 2 --enable-auto-tool-choice
+    # --tool-call-parser hermes --gpu-memory-utilization 0.3. Co-located with
+    # qwen3-32b-vllm on the same machine, different port/GPU split.
+    api_key: "EMPTY"
+    base_url: http://localhost:8002/v1
+    timeout: 10
+    patient_actor_model: Qwen3-8B
+    doctor_model: Qwen3-8B
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+  lingshu-32b-vllm:
+    # vLLM: ./weight/Lingshu-32b on port 8005.
+    api_key: "EMPTY"
+    base_url: http://localhost:8005/v1
+    timeout: 20
+    patient_actor_model: Lingshu-32b
+    doctor_model: Lingshu-32b
+    lab_model: Lingshu-32b
+  baichuan-m2-32b-vllm:
+    # vLLM: ./weight/Baichuan-M2-32B on port 8008. The model's tokenizer
+    # supports OpenAI-style tool calls rendered as <tool_call> XML.
+    api_key: "EMPTY"
+    base_url: http://localhost:8008/v1
+    timeout: 20
+    patient_actor_model: Baichuan-M2-32B
+    doctor_model: Baichuan-M2-32B
+    lab_model: Baichuan-M2-32B
+    # Do not pass chat_template_kwargs.thinking_mode="off": Baichuan's
+    # tokenizer still pre-fills <think> in that mode, so its </think> prefix
+    # reaches vLLM's tool parser. Omitting thinking_mode is the no-thinking
+    # mode for this template.
+  healthgpt-pro-4b-vllm:
+    # vLLM: ./weight/HealthGPT-Pro-4B on port 8006.
+    # Intended for --doctor-provider comparisons; retain the existing patient
+    # and lab providers so only the doctor model changes.
+    api_key: "EMPTY"
+    base_url: http://localhost:8006/v1
+    timeout: 10
+    patient_actor_model: HealthGPT-Pro-4B
+    doctor_model: HealthGPT-Pro-4B
+    lab_model: HealthGPT-Pro-4B
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+  healthgpt-pro-8b-vllm:
+    # vLLM: ./weight/HealthGPT-Pro-8B on port 8007.
+    api_key: "EMPTY"
+    base_url: http://localhost:8007/v1
+    timeout: 20
+    patient_actor_model: HealthGPT-Pro-8B
+    doctor_model: HealthGPT-Pro-8B
+    lab_model: HealthGPT-Pro-8B
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+  Qwen3.5-2B-mimic-iv-ext:
+    # Local transformers + LoRA fallback for missing-lab prediction.
+    # Fill model_path/adapter_path to point at the base Qwen3.5-2B weights
+    # and the trained MIMIC lab LoRA adapter on the machine running eval.
+    model_path: ../weight/Qwen3.5-2B
+    adapter_path: ../train/provider/mimic-iv-ext/output/checkpoints/final_adapter
+    lab_mapping_path: ../dataset/mimic-iv-ext/lab_test_mapping.csv
+    # Physical GPU used by the evaluation process for the local Transformers
+    # model. This avoids device_map="auto" selecting another visible GPU.
+    local_device: cuda:0
+    # Missing lab items from a broad panel are generated in small batches to
+    # keep the local 2B model within a 48GB GPU's inference-memory budget.
+    local_batch_size: 4
+    local_generation_timeout: 60
+
+default_llm_provider: gpt-4o-mini
+
+paths:
+  synthea_pool: ../synthea/output_pool/fhir
+  cases: data/cases
+  eval_results: data/eval_results
+
+# One entry per plugged-in hospital-system data source (see core/registry.py
+# and adapters/). data_dir is the only thing usually needed — each adapter
+# derives its own lab_provider_catalog.json / radiology_catalog.json paths
+# from it unless overridden here.
+datasets:
+  mimic-iv-ext:
+    data_dir: ../dataset/mimic-iv-ext
+  sicdb-ext:
+    data_dir: ../dataset/sicdb-ext
+
+# Which dataset scripts/build_cases.py etc. use when --dataset isn't passed.
+default_dataset: mimic-iv-ext
+
+simulation:
+  max_turns: 20
+  language: zh   # 'zh' | 'en'  — controls doctor/patient prompt language and label formatting
+
+pipeline:
+  top_k: 3
+  age_tolerance_adult: 5
+  age_tolerance_elderly: 8  # applied when anchor_age > 75
+  min_match_score: 0.25
+
+scoring:
+  weights:
+    information_collection: 0.5
+    diagnosis: 0.5
+  diagnosis_subweights:
+    category: 0.5
+    subtype: 0.5

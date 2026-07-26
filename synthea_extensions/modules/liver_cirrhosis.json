@@ -1,0 +1,440 @@
+{
+  "name": "Liver Cirrhosis and Portal Hypertension",
+  "remarks": [
+    "Models liver cirrhosis and its major complications in US adults.",
+    "Epidemiology: NIDDK 2021. ~4.5 million Americans (~1.3% of adults) have cirrhosis.",
+    "Etiology: HCV (~30%), alcohol (~25%), NASH/NAFLD (~25%), other (~20%).",
+    "Hospital-admitted patients ~7.5% have portal hypertension as secondary dx (MIMIC).",
+    "This module handles established cirrhosis; progression from HCV/AUD in those modules.",
+    "Supports MIMIC conditioning via mimic_force_liver_cirrhosis attribute.",
+    "Complications: portal hypertension, ascites, esophageal varices, hepatic encephalopathy.",
+    "Treatment: propranolol/nadolol for variceal prophylaxis; lactulose for encephalopathy;",
+    "  rifaximin; furosemide+spironolactone for ascites; TIPS procedure for refractory cases.",
+    "SNOMED: 19943007 (Cirrhosis of liver), 34742003 (Portal hypertension).",
+    "MELD score monitoring and liver transplant evaluation for decompensated cirrhosis."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Cirrhosis_Onset",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_liver_cirrhosis",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Check_HCV_Or_AUD_Trigger"
+        }
+      ]
+    },
+
+    "Check_HCV_Or_AUD_Trigger": {
+      "type": "Simple",
+      "remarks": [
+        "Cirrhosis is primarily triggered by HCV or AUD progression modules.",
+        "Also check for NASH risk: obesity + metabolic syndrome.",
+        "For spontaneous onset (NAFLD/other), use low base rate after age 45."
+      ],
+      "conditional_transition": [
+        {
+          "transition": "Cirrhosis_Onset",
+          "condition": {
+            "condition_type": "Or",
+            "conditions": [
+              {
+                "condition_type": "Attribute",
+                "attribute": "liver_cirrhosis_dx",
+                "operator": "is not nil"
+              },
+              {
+                "condition_type": "Attribute",
+                "attribute": "hepatitis_c_dx",
+                "operator": "is not nil"
+              }
+            ]
+          }
+        },
+        {
+          "transition": "NAFLD_Age_Guard"
+        }
+      ]
+    },
+
+    "NAFLD_Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 45,
+        "unit": "years"
+      },
+      "direct_transition": "NAFLD_Gate"
+    },
+
+    "NAFLD_Gate": {
+      "type": "Simple",
+      "remarks": [
+        "NAFLD cirrhosis: ~0.5% annual incidence in NAFLD patients. Very slow progression.",
+        "Modeled as low background rate for patients without HCV/AUD."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Cirrhosis_Onset",
+          "distribution": 0.005
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.995
+        }
+      ]
+    },
+
+    "Cirrhosis_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "19943007",
+          "display": "Cirrhosis of liver (disorder)"
+        }
+      ],
+      "direct_transition": "Cirrhosis_Encounter"
+    },
+
+    "Cirrhosis_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Cirrhosis_Labs"
+    },
+
+    "Cirrhosis_Labs": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "24325-3",
+          "display": "Hepatic function panel - Serum or Plasma"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1742-6",
+              "display": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 30, "high": 120 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1920-8",
+              "display": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 40, "high": 180 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1975-2",
+              "display": "Bilirubin.total [Mass/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "mg/dL",
+          "range": { "low": 1.5, "high": 6.0 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1759-0",
+              "display": "Albumin [Mass/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "g/dL",
+          "range": { "low": 2.5, "high": 3.8 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "5902-2",
+              "display": "Prothrombin time (PT)"
+            }
+          ],
+          "unit": "s",
+          "range": { "low": 14, "high": 22 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "6301-6",
+              "display": "INR in Platelet poor plasma by Coagulation assay"
+            }
+          ],
+          "unit": "{INR}",
+          "range": { "low": 1.3, "high": 2.5 }
+        }
+      ],
+      "direct_transition": "MELD_Score"
+    },
+
+    "MELD_Score": {
+      "type": "Observation",
+      "category": "laboratory",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "44667-4",
+          "display": "Model for End-Stage Liver Disease (MELD) score"
+        }
+      ],
+      "range": { "low": 10, "high": 25 },
+      "direct_transition": "Portal_Hypertension_Check"
+    },
+
+    "Portal_Hypertension_Check": {
+      "type": "Simple",
+      "remarks": [
+        "~60% of cirrhotic patients have clinically significant portal hypertension.",
+        "Ascites in ~50% of compensated cirrhosis patients within 10 years (EASL)."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Portal_Hypertension_Onset",
+          "distribution": 0.60
+        },
+        {
+          "transition": "Compensated_Cirrhosis_Care",
+          "distribution": 0.40
+        }
+      ]
+    },
+
+    "Portal_Hypertension_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "portal_htn_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "34742003",
+          "display": "Portal hypertension (disorder)"
+        }
+      ],
+      "direct_transition": "Variceal_Prophylaxis"
+    },
+
+    "Variceal_Prophylaxis": {
+      "type": "MedicationOrder",
+      "reason": "portal_htn_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "8787",
+          "display": "Propranolol 40 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Ascites_Check"
+    },
+
+    "Ascites_Check": {
+      "type": "Simple",
+      "remarks": ["~50% of portal hypertension patients develop ascites."],
+      "distributed_transition": [
+        {
+          "transition": "Ascites_Onset",
+          "distribution": 0.50
+        },
+        {
+          "transition": "Diuretic_Therapy",
+          "distribution": 0.50
+        }
+      ]
+    },
+
+    "Ascites_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "ascites_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "389026000",
+          "display": "Ascites (disorder)"
+        }
+      ],
+      "direct_transition": "Diuretic_Therapy"
+    },
+
+    "Diuretic_Therapy": {
+      "type": "MedicationOrder",
+      "reason": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "313096",
+          "display": "Furosemide 40 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Spironolactone"
+    },
+
+    "Spironolactone": {
+      "type": "MedicationOrder",
+      "reason": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "313096",
+          "display": "Spironolactone 100 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Lactulose"
+    },
+
+    "Lactulose": {
+      "type": "MedicationOrder",
+      "reason": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "56549",
+          "display": "Lactulose 10 G/15 mL Oral Solution"
+        }
+      ],
+      "direct_transition": "Cirrhosis_Encounter_End"
+    },
+
+    "Compensated_Cirrhosis_Care": {
+      "type": "Procedure",
+      "reason": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "386828003",
+          "display": "Gastroscopy (procedure)"
+        }
+      ],
+      "duration": { "low": 20, "high": 30, "unit": "minutes" },
+      "direct_transition": "Cirrhosis_Encounter_End"
+    },
+
+    "Cirrhosis_Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Cirrhosis_Monitoring_Delay"
+    },
+
+    "Cirrhosis_Monitoring_Delay": {
+      "type": "Delay",
+      "range": { "low": 5, "high": 7, "unit": "months" },
+      "direct_transition": "Cirrhosis_Monitoring"
+    },
+
+    "Cirrhosis_Monitoring": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "cirrhosis_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Monitoring_Labs"
+    },
+
+    "Monitoring_Labs": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "24325-3",
+          "display": "Hepatic function panel - Serum or Plasma"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1759-0",
+              "display": "Albumin [Mass/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "g/dL",
+          "range": { "low": 2.0, "high": 3.5 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1975-2",
+              "display": "Bilirubin.total [Mass/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "mg/dL",
+          "range": { "low": 1.0, "high": 8.0 }
+        }
+      ],
+      "direct_transition": "HCC_Screening"
+    },
+
+    "HCC_Screening": {
+      "type": "Procedure",
+      "reason": "cirrhosis_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "16310003",
+          "display": "Diagnostic ultrasonography (procedure)"
+        }
+      ],
+      "duration": { "low": 20, "high": 30, "unit": "minutes" },
+      "direct_transition": "Monitoring_End"
+    },
+
+    "Monitoring_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Cirrhosis_Monitoring_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

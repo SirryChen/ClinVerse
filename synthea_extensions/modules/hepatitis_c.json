@@ -1,0 +1,470 @@
+{
+  "name": "Hepatitis C General Population",
+  "remarks": [
+    "Models Hepatitis C virus (HCV) infection and chronic hepatitis C in US adults.",
+    "Epidemiology: CDC HCV Surveillance Report 2020. ~2.4 million Americans chronically infected.",
+    "Estimated prevalence ~0.7% of US adults. 'Baby boomer' cohort (1945-1965) ~3x higher.",
+    "Risk groups: IVDU ~50-80% lifetime prevalence; blood transfusion pre-1992; incarcerated.",
+    "Hospital-admitted patients ~8.2% have HCV in MIMIC-IV data.",
+    "Supports MIMIC conditioning via mimic_force_hepatitis_c attribute.",
+    "Disease progression: acute → chronic (75-85%); ~20% develop cirrhosis over 20 years.",
+    "Treatment per AASLD 2022: Direct-Acting Antivirals (DAA) - sofosbuvir-based regimens.",
+    "SVR (cure) rate >95% with modern DAAs.",
+    "SNOMED: 50711007 (Viral hepatitis C), 235862008 (Chronic hepatitis C).",
+    "Genotype assumed mixed; uses RxNorm codes for sofosbuvir/ledipasvir, glecaprevir/pibrentasvir."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Chronic_HCV_Onset",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_hepatitis_c",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 25,
+        "unit": "years"
+      },
+      "direct_transition": "Population_Prevalence_Gate"
+    },
+
+    "Population_Prevalence_Gate": {
+      "type": "Simple",
+      "remarks": [
+        "CDC: ~0.7% of US adult general population has chronic HCV.",
+        "MIMIC hospital-admitted rate ~8.2% — reflects high-risk selection bias.",
+        "We model general population rate here; MIMIC conditioning handles the rest."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Acute_HCV_Exposure",
+          "distribution": 0.007
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.993
+        }
+      ]
+    },
+
+    "Acute_HCV_Exposure": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "hcv_acute_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "50711007",
+          "display": "Viral hepatitis C (disorder)"
+        }
+      ],
+      "direct_transition": "Acute_Phase_Delay"
+    },
+
+    "Acute_Phase_Delay": {
+      "type": "Delay",
+      "remarks": ["Acute phase: 2-12 weeks incubation, then 6 months to determine chronicity."],
+      "range": { "low": 6, "high": 9, "unit": "months" }
+      ,
+      "direct_transition": "Check_Chronicity"
+    },
+
+    "Check_Chronicity": {
+      "type": "Simple",
+      "remarks": [
+        "75-85% of HCV infections become chronic (CDC 2020).",
+        "~15-25% self-clear spontaneously."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Chronic_HCV_Onset",
+          "distribution": 0.80
+        },
+        {
+          "transition": "Spontaneous_Clearance",
+          "distribution": 0.20
+        }
+      ]
+    },
+
+    "Spontaneous_Clearance": {
+      "type": "ConditionEnd",
+      "condition_onset": "Acute_HCV_Exposure",
+      "direct_transition": "Terminal"
+    },
+
+    "Chronic_HCV_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "hepatitis_c_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "235862008",
+          "display": "Chronic hepatitis C (disorder)"
+        }
+      ],
+      "direct_transition": "HCV_Diagnosis_Encounter"
+    },
+
+    "HCV_Diagnosis_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "hepatitis_c_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "HCV_Serology"
+    },
+
+    "HCV_Serology": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "40724-7",
+          "display": "Hepatitis C virus Ab [Presence] in Serum by Immunoassay"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "40724-7",
+              "display": "Hepatitis C virus Ab [Presence] in Serum by Immunoassay"
+            }
+          ],
+          "unit": "{titer}",
+          "exact": { "quantity": 1 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "11259-9",
+              "display": "Hepatitis C virus RNA [Presence] in Serum by Probe and target amplification method"
+            }
+          ],
+          "unit": "{copies}/mL",
+          "range": { "low": 100000, "high": 6000000 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1742-6",
+              "display": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 45, "high": 200 }
+        }
+      ],
+      "direct_transition": "FIB4_Assessment"
+    },
+
+    "FIB4_Assessment": {
+      "type": "Observation",
+      "category": "laboratory",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "89580-1",
+          "display": "FIB-4 index for liver fibrosis [Calculated]"
+        }
+      ],
+      "range": { "low": 1.0, "high": 3.5 },
+      "direct_transition": "Decide_DAA_Treatment"
+    },
+
+    "Decide_DAA_Treatment": {
+      "type": "Simple",
+      "remarks": [
+        "AASLD 2022: Treatment recommended for ALL patients with chronic HCV.",
+        "~60% of diagnosed patients receive treatment (barriers: cost, access, substance use).",
+        "Modern DAAs: SVR >95%."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Sofosbuvir_Ledipasvir",
+          "distribution": 0.35
+        },
+        {
+          "transition": "Prescribe_Glecaprevir_Pibrentasvir",
+          "distribution": 0.25
+        },
+        {
+          "transition": "Monitoring_Without_Treatment",
+          "distribution": 0.40
+        }
+      ]
+    },
+
+    "Prescribe_Sofosbuvir_Ledipasvir": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "hcv_treatment",
+      "reason": "hepatitis_c_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "1719287",
+          "display": "Sofosbuvir 400 MG / ledipasvir 90 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Treatment_Duration_Delay"
+    },
+
+    "Prescribe_Glecaprevir_Pibrentasvir": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "hcv_treatment",
+      "reason": "hepatitis_c_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "2168082",
+          "display": "Glecaprevir 100 MG / pibrentasvir 40 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Treatment_Duration_Delay"
+    },
+
+    "Treatment_Duration_Delay": {
+      "type": "Delay",
+      "remarks": ["DAA treatment: 8-12 weeks course."],
+      "range": { "low": 8, "high": 12, "unit": "weeks" },
+      "direct_transition": "SVR_Check"
+    },
+
+    "SVR_Check": {
+      "type": "Simple",
+      "remarks": ["DAA SVR rate >95%. Model 95% cure, 5% treatment failure."],
+      "distributed_transition": [
+        {
+          "transition": "HCV_SVR_Achieved",
+          "distribution": 0.95
+        },
+        {
+          "transition": "Treatment_Failure",
+          "distribution": 0.05
+        }
+      ]
+    },
+
+    "HCV_SVR_Achieved": {
+      "type": "Observation",
+      "category": "laboratory",
+      "unit": "{copies}/mL",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "11259-9",
+          "display": "Hepatitis C virus RNA [Presence] in Serum by Probe and target amplification method"
+        }
+      ],
+      "exact": { "quantity": 0 },
+      "direct_transition": "SVR_Encounter_End"
+    },
+
+    "SVR_Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Post_SVR_Monitoring_Delay"
+    },
+
+    "Treatment_Failure": {
+      "type": "Observation",
+      "category": "laboratory",
+      "unit": "{copies}/mL",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "11259-9",
+          "display": "Hepatitis C virus RNA [Presence] in Serum by Probe and target amplification method"
+        }
+      ],
+      "range": { "low": 50000, "high": 2000000 },
+      "direct_transition": "Monitoring_Without_Treatment"
+    },
+
+    "Monitoring_Without_Treatment": {
+      "type": "EncounterEnd",
+      "direct_transition": "Annual_HCV_Delay"
+    },
+
+    "Annual_HCV_Delay": {
+      "type": "Delay",
+      "range": { "low": 10, "high": 14, "unit": "months" },
+      "direct_transition": "Annual_HCV_Monitoring"
+    },
+
+    "Annual_HCV_Monitoring": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "hepatitis_c_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Annual_HCV_Labs"
+    },
+
+    "Annual_HCV_Labs": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "24325-3",
+          "display": "Hepatic function panel - Serum or Plasma"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1742-6",
+              "display": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 30, "high": 150 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1920-8",
+              "display": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 35, "high": 180 }
+        }
+      ],
+      "direct_transition": "Check_Cirrhosis_Progression"
+    },
+
+    "Check_Cirrhosis_Progression": {
+      "type": "Simple",
+      "remarks": [
+        "~1% of untreated chronic HCV patients progress to cirrhosis per year.",
+        "After 20 years: ~20% cirrhosis rate. Annual check."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "HCV_Cirrhosis_Onset",
+          "distribution": 0.01
+        },
+        {
+          "transition": "Annual_Monitoring_End",
+          "distribution": 0.99
+        }
+      ]
+    },
+
+    "HCV_Cirrhosis_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "liver_cirrhosis_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "19943007",
+          "display": "Cirrhosis of liver (disorder)"
+        }
+      ],
+      "direct_transition": "Annual_Monitoring_End"
+    },
+
+    "Annual_Monitoring_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Annual_HCV_Delay"
+    },
+
+    "Post_SVR_Monitoring_Delay": {
+      "type": "Delay",
+      "range": { "low": 10, "high": 14, "unit": "months" },
+      "direct_transition": "Post_SVR_Monitoring"
+    },
+
+    "Post_SVR_Monitoring": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "hepatitis_c_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Post_SVR_Labs"
+    },
+
+    "Post_SVR_Labs": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "24325-3",
+          "display": "Hepatic function panel - Serum or Plasma"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1742-6",
+              "display": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 10, "high": 45 }
+        }
+      ],
+      "direct_transition": "Post_SVR_End"
+    },
+
+    "Post_SVR_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Post_SVR_Monitoring_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

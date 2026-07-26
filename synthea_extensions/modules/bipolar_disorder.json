@@ -1,0 +1,344 @@
+{
+  "name": "Bipolar Disorder General Population",
+  "remarks": [
+    "Models Bipolar Disorder (BD-I and BD-II) in the general US population.",
+    "Epidemiology: NIMH 2021. 12-month prevalence 2.6%; lifetime 4.4%.",
+    "BD-I 12-month: 0.6%; BD-II: 0.8%; threshold: 1.2% (NIMH).",
+    "Gender roughly equal; slight female predominance in BD-II.",
+    "Hospital-admitted patients ~9.3% have bipolar disorder (MIMIC).",
+    "Supports MIMIC conditioning via mimic_force_bipolar_disorder attribute.",
+    "Treatment per APA 2018 Practice Guidelines: lithium first-line for classic BD-I.",
+    "Mood stabilizers: lithium, valproate, lamotrigine. Atypical antipsychotics: quetiapine.",
+    "SNOMED: 13746004 (Bipolar disorder), 68890003 (Bipolar I disorder).",
+    "Medications: lithium carbonate (RxNorm 6448), valproic acid (11170), quetiapine (115698)."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Bipolar_Episode",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_bipolar_disorder",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 18,
+        "unit": "years"
+      },
+      "direct_transition": "Gender_Split"
+    },
+
+    "Gender_Split": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Female_Bipolar",
+          "condition": {
+            "condition_type": "Gender",
+            "gender": "F"
+          }
+        },
+        {
+          "transition": "Male_Bipolar"
+        }
+      ]
+    },
+
+    "Female_Bipolar": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: bipolar disorder equal prevalence but BD-II slightly higher in women.",
+        "12-month rate ~2.8% for women."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Bipolar_Episode",
+          "distribution": 0.028
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.972
+        }
+      ]
+    },
+
+    "Male_Bipolar": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: 12-month rate ~2.4% for men; BD-I slightly higher in men."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Bipolar_Episode",
+          "distribution": 0.024
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.976
+        }
+      ]
+    },
+
+    "Bipolar_Episode": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "13746004",
+          "display": "Bipolar disorder (disorder)"
+        }
+      ],
+      "direct_transition": "Psych_Evaluation"
+    },
+
+    "Psych_Evaluation": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Mood_Assessment"
+    },
+
+    "Mood_Assessment": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "89209-7",
+          "display": "Mood Disorder Questionnaire [MDQ] total score [Reported]"
+        }
+      ],
+      "range": { "low": 6, "high": 13 },
+      "direct_transition": "Psych_Diagnosis"
+    },
+
+    "Psych_Diagnosis": {
+      "type": "Procedure",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "268884003",
+          "display": "Psychiatric evaluation and management (procedure)"
+        }
+      ],
+      "duration": { "low": 45, "high": 90, "unit": "minutes" },
+      "direct_transition": "Bipolar_Careplan"
+    },
+
+    "Bipolar_Careplan": {
+      "type": "CarePlanStart",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "736253002",
+          "display": "Mental health care plan (record artifact)"
+        }
+      ],
+      "activities": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        },
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Psychoeducation (regime/therapy)"
+        }
+      ],
+      "direct_transition": "Choose_Mood_Stabilizer"
+    },
+
+    "Choose_Mood_Stabilizer": {
+      "type": "Simple",
+      "remarks": [
+        "APA 2018: Lithium first-line for BD-I mania; valproate alternative.",
+        "Lamotrigine preferred for bipolar depression. Quetiapine for mixed features.",
+        "~90% of BD-I patients receive pharmacotherapy."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Lithium",
+          "distribution": 0.35
+        },
+        {
+          "transition": "Prescribe_Valproate",
+          "distribution": 0.25
+        },
+        {
+          "transition": "Prescribe_Lamotrigine",
+          "distribution": 0.20
+        },
+        {
+          "transition": "Prescribe_Quetiapine",
+          "distribution": 0.20
+        }
+      ]
+    },
+
+    "Prescribe_Lithium": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "mood_stabilizer",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "6448",
+          "display": "Lithium Carbonate 300 MG Oral Capsule"
+        }
+      ],
+      "direct_transition": "Lithium_Level"
+    },
+
+    "Lithium_Level": {
+      "type": "Observation",
+      "category": "laboratory",
+      "unit": "mEq/L",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "14334-7",
+          "display": "Lithium [Moles/volume] in Serum or Plasma"
+        }
+      ],
+      "range": { "low": 0.6, "high": 1.2 },
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Valproate": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "mood_stabilizer",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "11170",
+          "display": "Valproic Acid 250 MG Oral Capsule"
+        }
+      ],
+      "direct_transition": "Valproate_Level"
+    },
+
+    "Valproate_Level": {
+      "type": "Observation",
+      "category": "laboratory",
+      "unit": "ug/mL",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "4089-4",
+          "display": "Valproate [Mass/volume] in Serum or Plasma"
+        }
+      ],
+      "range": { "low": 50, "high": 100 },
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Lamotrigine": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "mood_stabilizer",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "28439",
+          "display": "Lamotrigine 100 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Quetiapine": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "mood_stabilizer",
+      "reason": "bipolar_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "115698",
+          "display": "Quetiapine 200 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Monitoring_Delay"
+    },
+
+    "Monitoring_Delay": {
+      "type": "Delay",
+      "range": { "low": 2, "high": 4, "unit": "months" },
+      "direct_transition": "Monitoring_Encounter"
+    },
+
+    "Monitoring_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "bipolar_disorder_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Monitoring_Assessment"
+    },
+
+    "Monitoring_Assessment": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "89209-7",
+          "display": "Mood Disorder Questionnaire [MDQ] total score [Reported]"
+        }
+      ],
+      "range": { "low": 0, "high": 8 },
+      "direct_transition": "Monitoring_End"
+    },
+
+    "Monitoring_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Monitoring_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

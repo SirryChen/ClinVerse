@@ -1,0 +1,6 @@
+# Overrides for batch evaluation runs
+simulation:
+  max_turns: 20
+
+pipeline:
+  top_k: 3

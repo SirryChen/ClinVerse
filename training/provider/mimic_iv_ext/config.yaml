@@ -1,0 +1,96 @@
+model:
+  name_or_path: ../../../weight/Qwen3.5-2B
+  max_length: 4096
+  torch_dtype: bfloat16          # 100GB VRAM：直接bf16，无需量化
+  trust_remote_code: true
+  enable_thinking: false         # Qwen3.5 默认开启思考模式，lab 预测需关闭
+
+# 基线评测（evaluate.py --base-only --baseline <name>）
+baselines:
+  qwen3.5-2b:
+    name_or_path: ../../../weight/Qwen3.5-2B
+    batch_size: 16
+  qwen3.5-27b:
+    name_or_path: ../../../weight/Qwen3.5-27B
+    batch_size: 4                # 27B bf16 显存占用大，适当减小 batch
+  deepseek-v4-flash:
+    backend: api
+    api_base: http://localhost:8010/v1
+    model: ds-v4-flash
+    api_key_env: INF_API_KEY     # export INF_API_KEY=...
+    max_tokens: 32
+    concurrency: 16
+    temperature: 0
+  gpt-4o-mini:
+    backend: api
+    api_base: https://api.openai.com/v1
+    model: gpt-4o-mini
+    api_key_env: GOCHAO_API_KEY  # export GOCHAO_API_KEY=sk-...
+    max_tokens: 32
+    concurrency: 8               # 第三方代理，适当降低并发
+    temperature: 0
+
+data:
+  mimic_data_dir: ../../../dataset/mimic-iv-ext
+  lab_mapping_path: ../../../dataset/mimic-iv-ext/lab_test_mapping.csv
+  demographics_path: ../../../dataset/mimic-iv-ext/patient_demographics.csv
+  hpi_path: ../../../dataset/mimic-iv-ext/history_of_present_illness.csv
+  pe_path: ../../../dataset/mimic-iv-ext/physical_examination.csv
+  labs_path: ../../../dataset/mimic-iv-ext/laboratory_tests.csv
+  microbiology_path: ../../../dataset/mimic-iv-ext/microbiology.csv
+  medications_path: ../../../dataset/mimic-iv-ext/discharge_medications.csv
+  icd_diagnosis_path: ../../../dataset/mimic-iv-ext/icd_diagnosis.csv
+  hospital_course_path: ../../../dataset/mimic-iv-ext/hospital_course.csv
+  discharge_diagnosis_path: ../../../dataset/mimic-iv-ext/discharge_diagnosis.csv
+  output_dir: ./output
+  train_file: ./output/train.jsonl
+  test_file: ./output/test.jsonl
+  tokenize_cache_dir: ./output/tokenize_cache  # 首次训练会预处理并缓存，之后直接加载
+  pretokenize_num_proc: 8                      # 构建缓存时的并行进程数
+
+  min_context_labs: 2
+  normal_sample_ratio: 0.05  # 训练集：正常检验项目保留比例（异常项目全部保留）
+  train_ratio: 0.10  # 训练集占全量 hadm_id 的比例
+  test_ratio: 0.01   # 测试集占全量 hadm_id 的比例（train + test <= 1，剩余丢弃）
+  hpi_max_chars: 500          # p90 HPI ≈3417 chars，覆盖75%以上病历
+  pe_max_chars: 2000           # p90 PE  ≈1270 chars
+  hospital_course_max_chars: 6000  # p90 hospital_course ≈4972 chars
+  seed: 2026
+
+training:
+  output_dir: ./output/checkpoints
+  train_sampling_strategy: random              # random | group_by_length | sequential
+  num_train_epochs: 1
+  per_device_train_batch_size: 2   # 9B bf16 + 4096 seq ≈ 35GB，100GB卡充裕
+  gradient_accumulation_steps: 8    # 4卡×16×1 = 有效batch 64
+  gradient_checkpointing: false     # VRAM充裕，关闭以提升速度
+  learning_rate: 1.0e-4             # r=64 LoRA用稍低学习率更稳定
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  logging_steps: 20
+  save_steps: 50000
+  save_total_limit: 2
+  fp16: false
+  bf16: true
+  dataloader_num_workers: 8
+  remove_unused_columns: false
+  report_to: tensorboard
+
+lora:
+  r: 64                            # VRAM充裕，提升rank以增强表达能力
+  lora_alpha: 128                  # 通常为 2×r
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  bias: none
+  task_type: CAUSAL_LM
+
+# bnb块留空：load_in_4bit=false 时 train.py 跳过量化
+bnb:
+  load_in_4bit: false

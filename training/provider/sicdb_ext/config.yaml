@@ -1,0 +1,65 @@
+model:
+  name_or_path: ../../../weight/Qwen3.5-2B
+  max_length: 4096
+  torch_dtype: bfloat16
+  trust_remote_code: true
+  enable_thinking: false
+
+data:
+  # The generic provider data builder keeps this legacy key name, but it
+  # points to SICdb-Ext data for this configuration.
+  mimic_data_dir: ../../../dataset/sicdb-ext
+  lab_mapping_path: ../../../dataset/sicdb-ext/lab_test_mapping.csv
+  demographics_path: ../../../dataset/sicdb-ext/patient_demographics.csv
+  hpi_path: ../../../dataset/sicdb-ext/history_of_present_illness.csv
+  pe_path: ../../../dataset/sicdb-ext/physical_examination.csv
+  labs_path: ../../../dataset/sicdb-ext/laboratory_tests.csv
+  microbiology_path: ../../../dataset/sicdb-ext/microbiology.csv
+  medications_path: ../../../dataset/sicdb-ext/discharge_medications.csv
+  icd_diagnosis_path: ../../../dataset/sicdb-ext/icd_diagnosis.csv
+  hospital_course_path: ../../../dataset/sicdb-ext/hospital_course.csv
+  discharge_diagnosis_path: ../../../dataset/sicdb-ext/discharge_diagnosis.csv
+  output_dir: ./output
+  train_file: ./output/train.jsonl
+  test_file: ./output/test.jsonl
+  tokenize_cache_dir: ./output/tokenize_cache
+  pretokenize_num_proc: 8
+
+  min_context_labs: 2
+  normal_sample_ratio: 0.05
+  train_ratio: 0.10
+  test_ratio: 0.01
+  hpi_max_chars: 500
+  pe_max_chars: 2000
+  hospital_course_max_chars: 6000
+  seed: 2026
+
+training:
+  output_dir: ./output/checkpoints
+  train_sampling_strategy: random
+  num_train_epochs: 1
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: false
+  learning_rate: 1.0e-4
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  logging_steps: 20
+  save_steps: 50000
+  save_total_limit: 2
+  fp16: false
+  bf16: true
+  dataloader_num_workers: 8
+  remove_unused_columns: false
+  report_to: tensorboard
+
+lora:
+  r: 64
+  lora_alpha: 128
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  bias: none
+  task_type: CAUSAL_LM
+
+bnb:
+  load_in_4bit: false

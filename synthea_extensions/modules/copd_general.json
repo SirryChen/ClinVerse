@@ -1,0 +1,172 @@
+{
+  "name": "COPD General Population",
+  "remarks": [
+    "Models chronic obstructive pulmonary disease (COPD) in the general US population.",
+    "Epidemiology: CDC ~6% of US adults have diagnosed COPD; rare before age 40,",
+    "rising sharply with age and smoking history.",
+    "Supports MIMIC/SICdb conditioning: if person.attributes['mimic_force_copd']",
+    "is set, disease onset is forced regardless of probability gates.",
+    "Treatment follows GOLD guidelines (bronchodilator first-line, inhaled",
+    "corticosteroid/LABA combination for more frequent exacerbations).",
+    "SNOMED: 13645005 (Chronic obstructive lung disease)."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "remarks": ["Skip age guard if MIMIC/SICdb conditioning forced this condition."],
+      "conditional_transition": [
+        {
+          "transition": "COPD_Onset",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_copd",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 40,
+        "unit": "years"
+      },
+      "direct_transition": "Onset_Probability"
+    },
+
+    "Onset_Probability": {
+      "type": "Simple",
+      "remarks": ["CDC: ~6% of adults 40+ have diagnosed COPD."],
+      "distributed_transition": [
+        { "transition": "COPD_Onset", "distribution": 0.06 },
+        { "transition": "Terminal", "distribution": 0.94 }
+      ]
+    },
+
+    "COPD_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "copd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "13645005",
+          "display": "Chronic obstructive lung disease (disorder)"
+        }
+      ],
+      "direct_transition": "COPD_Encounter"
+    },
+
+    "COPD_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "copd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Record_Oxygen_Saturation"
+    },
+
+    "Record_Oxygen_Saturation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "vital_sign": "Oxygen Saturation",
+      "codes": [
+        { "system": "LOINC", "code": "59408-5", "display": "Oxygen saturation in Arterial blood by Pulse oximetry" }
+      ],
+      "unit": "%",
+      "range": { "low": 88, "high": 94 },
+      "direct_transition": "Decide_Treatment"
+    },
+
+    "Decide_Treatment": {
+      "type": "Simple",
+      "remarks": ["GOLD: short-acting bronchodilator first-line; ICS/LABA for more severe disease."],
+      "distributed_transition": [
+        { "transition": "Prescribe_Bronchodilator", "distribution": 0.55 },
+        { "transition": "Prescribe_ICS_LABA", "distribution": 0.45 }
+      ]
+    },
+
+    "Prescribe_Bronchodilator": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "copd_medication",
+      "reason": "copd_dx",
+      "codes": [
+        { "system": "RxNorm", "code": "245314", "display": "albuterol 5 MG/ML Inhalation Solution" }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_ICS_LABA": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "copd_medication",
+      "reason": "copd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "896209",
+          "display": "60 ACTUAT Fluticasone propionate 0.25 MG/ACTUAT / salmeterol 0.05 MG/ACTUAT Dry Powder Inhaler"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Monitoring_Delay"
+    },
+
+    "Monitoring_Delay": {
+      "type": "Delay",
+      "range": { "low": 6, "high": 12, "unit": "months" },
+      "direct_transition": "Monitoring_Encounter"
+    },
+
+    "Monitoring_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "copd_dx",
+      "wellness": true,
+      "codes": [
+        { "system": "SNOMED-CT", "code": "185349003", "display": "Encounter for check up (procedure)" }
+      ],
+      "direct_transition": "Monitoring_Oxygen_Saturation"
+    },
+
+    "Monitoring_Oxygen_Saturation": {
+      "type": "Observation",
+      "category": "vital-signs",
+      "vital_sign": "Oxygen Saturation",
+      "codes": [
+        { "system": "LOINC", "code": "59408-5", "display": "Oxygen saturation in Arterial blood by Pulse oximetry" }
+      ],
+      "unit": "%",
+      "range": { "low": 90, "high": 95 },
+      "direct_transition": "Monitoring_End"
+    },
+
+    "Monitoring_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Monitoring_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

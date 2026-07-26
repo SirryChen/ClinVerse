@@ -1,0 +1,392 @@
+{
+  "name": "Major Depressive Disorder General Population",
+  "remarks": [
+    "Models Major Depressive Disorder (MDD) in the general US population (non-veteran).",
+    "Epidemiology: NIMH 2021. 12-month prevalence 8.3% adults; lifetime 20.6%.",
+    "Female 12-month: 10.3%; Male: 6.2% (NIMH 2021).",
+    "Age distribution: 18-25 yr 18.6%, 26-49 yr 9.4%, 50+ yr 6.7% (NIMH).",
+    "Supports MIMIC conditioning via mimic_force_depression attribute.",
+    "Treatment per APA 2010/2019 Practice Guidelines: SSRI first-line.",
+    "SNOMED: 370143000 (Major depressive disorder). PHQ-9 screening included.",
+    "Medications: sertraline (RxNorm 36437), escitalopram (321988), venlafaxine (39786)."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "MDD_Episode",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_depression",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 18,
+        "unit": "years"
+      },
+      "direct_transition": "Gender_Split"
+    },
+
+    "Gender_Split": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Female_Onset",
+          "condition": {
+            "condition_type": "Gender",
+            "gender": "F"
+          }
+        },
+        {
+          "transition": "Male_Onset"
+        }
+      ]
+    },
+
+    "Female_Onset": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: women have 12-month MDD prevalence of 10.3%.",
+        "Higher rates 18-44 range. Distributed_transition models cumulative onset."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "MDD_Episode",
+          "distribution": 0.103
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.897
+        }
+      ]
+    },
+
+    "Male_Onset": {
+      "type": "Simple",
+      "remarks": ["NIMH: men have 12-month MDD prevalence of 6.2%."],
+      "distributed_transition": [
+        {
+          "transition": "MDD_Episode",
+          "distribution": 0.062
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.938
+        }
+      ]
+    },
+
+    "MDD_Episode": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "depression_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "370143000",
+          "display": "Major depressive disorder (disorder)"
+        }
+      ],
+      "direct_transition": "Psych_Encounter"
+    },
+
+    "Psych_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "PHQ9_Assessment"
+    },
+
+    "PHQ9_Assessment": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "44261-6",
+          "display": "Patient Health Questionnaire 9 item (PHQ-9) total score [Reported]"
+        }
+      ],
+      "range": { "low": 15, "high": 27 },
+      "direct_transition": "MDD_Diagnosis"
+    },
+
+    "MDD_Diagnosis": {
+      "type": "Procedure",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "268884003",
+          "display": "Psychiatric evaluation and management (procedure)"
+        }
+      ],
+      "duration": { "low": 30, "high": 60, "unit": "minutes" },
+      "direct_transition": "MDD_Careplan"
+    },
+
+    "MDD_Careplan": {
+      "type": "CarePlanStart",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "736253002",
+          "display": "Mental health care plan (record artifact)"
+        }
+      ],
+      "activities": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        },
+        {
+          "system": "SNOMED-CT",
+          "code": "304510005",
+          "display": "Recommendation to exercise (procedure)"
+        }
+      ],
+      "direct_transition": "Choose_Medication"
+    },
+
+    "Choose_Medication": {
+      "type": "Simple",
+      "remarks": [
+        "APA 2019: SSRI/SNRI first-line. Sertraline most commonly prescribed.",
+        "~75% receive pharmacotherapy at diagnosis per NIMH data."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Sertraline",
+          "distribution": 0.40
+        },
+        {
+          "transition": "Prescribe_Escitalopram",
+          "distribution": 0.25
+        },
+        {
+          "transition": "Prescribe_Venlafaxine",
+          "distribution": 0.10
+        },
+        {
+          "transition": "Therapy_Only",
+          "distribution": 0.25
+        }
+      ]
+    },
+
+    "Prescribe_Sertraline": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "antidepressant_medication",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "36437",
+          "display": "Sertraline 50 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Escitalopram": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "antidepressant_medication",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "321988",
+          "display": "Escitalopram 10 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Venlafaxine": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "antidepressant_medication",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "39786",
+          "display": "Venlafaxine 75 MG Extended Release Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Therapy_Only": {
+      "type": "Procedure",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        }
+      ],
+      "duration": { "low": 45, "high": 60, "unit": "minutes" },
+      "direct_transition": "Encounter_End"
+    },
+
+    "Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Follow_Up_Delay"
+    },
+
+    "Follow_Up_Delay": {
+      "type": "Delay",
+      "range": { "low": 4, "high": 8, "unit": "weeks" },
+      "direct_transition": "Follow_Up_Encounter"
+    },
+
+    "Follow_Up_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "depression_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Re_PHQ9"
+    },
+
+    "Re_PHQ9": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "44261-6",
+          "display": "Patient Health Questionnaire 9 item (PHQ-9) total score [Reported]"
+        }
+      ],
+      "range": { "low": 5, "high": 19 },
+      "direct_transition": "Check_Remission"
+    },
+
+    "Check_Remission": {
+      "type": "Simple",
+      "remarks": [
+        "STAR*D trial: ~37% remission at first step.",
+        "~50% achieve adequate response. ~30% have chronic course."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Remission_End",
+          "distribution": 0.37
+        },
+        {
+          "transition": "Therapy_Visit",
+          "distribution": 0.33
+        },
+        {
+          "transition": "Follow_Up_End",
+          "distribution": 0.30
+        }
+      ]
+    },
+
+    "Remission_End": {
+      "type": "ConditionEnd",
+      "condition_onset": "MDD_Episode",
+      "direct_transition": "Follow_Up_End"
+    },
+
+    "Therapy_Visit": {
+      "type": "Procedure",
+      "reason": "depression_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        }
+      ],
+      "duration": { "low": 45, "high": 50, "unit": "minutes" },
+      "direct_transition": "Follow_Up_End"
+    },
+
+    "Follow_Up_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Quarterly_Delay"
+    },
+
+    "Quarterly_Delay": {
+      "type": "Delay",
+      "range": { "low": 3, "high": 4, "unit": "months" },
+      "direct_transition": "Quarterly_Check"
+    },
+
+    "Quarterly_Check": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "depression_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Quarterly_PHQ9"
+    },
+
+    "Quarterly_PHQ9": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "44261-6",
+          "display": "Patient Health Questionnaire 9 item (PHQ-9) total score [Reported]"
+        }
+      ],
+      "range": { "low": 3, "high": 14 },
+      "direct_transition": "Quarterly_End"
+    },
+
+    "Quarterly_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Quarterly_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

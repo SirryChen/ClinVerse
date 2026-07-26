@@ -1,0 +1,56 @@
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+config/local.yaml
+
+# Datasets, generated cases, and model artifacts
+data/
+dataset/
+datasets/
+weight/
+weights/
+checkpoints/
+output/
+outputs/
+eval_runs/
+logs/
+*.jsonl
+*.pkl
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.zip
+
+# Training and experiment artifacts
+training/**/output/
+training/**/checkpoints/
+experiments/**/results/
+experiments/**/*_results.json
+experiments/**/*_summary.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Frontend and Unity artifacts are intentionally out of scope
+web/
+frontend/
+ClinVerseWeb/
+ClinVerseUnity/
+node_modules/
+dist/
+Library/
+Build/

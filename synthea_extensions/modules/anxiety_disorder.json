@@ -1,0 +1,331 @@
+{
+  "name": "Anxiety Disorder General Population",
+  "remarks": [
+    "Models Generalized Anxiety Disorder (GAD) and anxiety NOS in the general US population.",
+    "Epidemiology: NIMH 2021. Any anxiety disorder 12-month prevalence 19.1%.",
+    "GAD specifically: 12-month 3.1%; female 4.3%, male 1.9% (NIMH).",
+    "Lifetime prevalence any anxiety disorder: 31.1%. Hospital-admitted patients ~31-39% (MIMIC).",
+    "Supports MIMIC conditioning via mimic_force_anxiety attribute.",
+    "Treatment per NICE 2020 guidelines and APA practice guidelines: SSRI/SNRI + CBT.",
+    "SNOMED: 197480006 (Anxiety disorder), 21897009 (Generalized anxiety disorder).",
+    "Medications: sertraline, escitalopram, buspirone, lorazepam (short-term)."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Anxiety_Onset",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_anxiety",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 18,
+        "unit": "years"
+      },
+      "direct_transition": "Gender_Split"
+    },
+
+    "Gender_Split": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Female_Anxiety",
+          "condition": {
+            "condition_type": "Gender",
+            "gender": "F"
+          }
+        },
+        {
+          "transition": "Male_Anxiety"
+        }
+      ]
+    },
+
+    "Female_Anxiety": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: women 23.4% lifetime any anxiety disorder.",
+        "Annual incidence approximation: ~4.3% for GAD + other anxiety subtypes.",
+        "Using 0.18 for generalized anxiety NOS category to match MIMIC hospital prevalence."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Anxiety_Onset",
+          "distribution": 0.18
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.82
+        }
+      ]
+    },
+
+    "Male_Anxiety": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: men 14.3% lifetime any anxiety disorder.",
+        "Annual GAD incidence lower in males. Using 0.10 for the general category."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Anxiety_Onset",
+          "distribution": 0.10
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.90
+        }
+      ]
+    },
+
+    "Anxiety_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "anxiety_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "197480006",
+          "display": "Anxiety disorder (disorder)"
+        }
+      ],
+      "direct_transition": "Anxiety_Encounter"
+    },
+
+    "Anxiety_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "GAD7_Assessment"
+    },
+
+    "GAD7_Assessment": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "70274-6",
+          "display": "Generalized anxiety disorder 7 item (GAD-7) total score [Reported.PHQ]"
+        }
+      ],
+      "range": { "low": 10, "high": 21 },
+      "direct_transition": "Anxiety_Diagnosis"
+    },
+
+    "Anxiety_Diagnosis": {
+      "type": "Procedure",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "268884003",
+          "display": "Psychiatric evaluation and management (procedure)"
+        }
+      ],
+      "duration": { "low": 20, "high": 45, "unit": "minutes" },
+      "direct_transition": "Anxiety_Careplan"
+    },
+
+    "Anxiety_Careplan": {
+      "type": "CarePlanStart",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "736253002",
+          "display": "Mental health care plan (record artifact)"
+        }
+      ],
+      "activities": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        },
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Relaxation therapy (regime/therapy)"
+        }
+      ],
+      "direct_transition": "Choose_Anxiety_Med"
+    },
+
+    "Choose_Anxiety_Med": {
+      "type": "Simple",
+      "remarks": [
+        "NICE 2020: SSRI first-line for GAD. Benzodiazepines short-term only.",
+        "~70% receive pharmacotherapy. SSRIs/SNRIs most common."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Sertraline",
+          "distribution": 0.32
+        },
+        {
+          "transition": "Prescribe_Escitalopram",
+          "distribution": 0.22
+        },
+        {
+          "transition": "Prescribe_Buspirone",
+          "distribution": 0.10
+        },
+        {
+          "transition": "Prescribe_Lorazepam_ShortTerm",
+          "distribution": 0.08
+        },
+        {
+          "transition": "CBT_Only",
+          "distribution": 0.28
+        }
+      ]
+    },
+
+    "Prescribe_Sertraline": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "anxiolytic_medication",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "36437",
+          "display": "Sertraline 50 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Escitalopram": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "anxiolytic_medication",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "321988",
+          "display": "Escitalopram 10 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Buspirone": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "anxiolytic_medication",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "42568",
+          "display": "BusPIRone 10 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "Prescribe_Lorazepam_ShortTerm": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "anxiolytic_medication",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "311700",
+          "display": "Lorazepam 0.5 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Encounter_End"
+    },
+
+    "CBT_Only": {
+      "type": "Procedure",
+      "reason": "anxiety_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        }
+      ],
+      "duration": { "low": 45, "high": 60, "unit": "minutes" },
+      "direct_transition": "Encounter_End"
+    },
+
+    "Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_Monitoring_Delay"
+    },
+
+    "Chronic_Monitoring_Delay": {
+      "type": "Delay",
+      "range": { "low": 3, "high": 6, "unit": "months" },
+      "direct_transition": "Chronic_Monitoring"
+    },
+
+    "Chronic_Monitoring": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "anxiety_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Monitoring_GAD7"
+    },
+
+    "Monitoring_GAD7": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "70274-6",
+          "display": "Generalized anxiety disorder 7 item (GAD-7) total score [Reported.PHQ]"
+        }
+      ],
+      "range": { "low": 4, "high": 16 },
+      "direct_transition": "Monitoring_End"
+    },
+
+    "Monitoring_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_Monitoring_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

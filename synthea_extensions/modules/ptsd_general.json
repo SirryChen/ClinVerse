@@ -1,0 +1,377 @@
+{
+  "name": "PTSD General Population (Non-Veteran)",
+  "remarks": [
+    "Models Post-Traumatic Stress Disorder (PTSD) in the general US population (non-veteran focus).",
+    "Epidemiology: NIMH 2021. 12-month prevalence 3.5%; lifetime 6.8%.",
+    "Female 12-month: 5.2%; Male: 1.8% (large gender disparity - NIMH 2021).",
+    "Hospital-admitted patients have higher rates due to trauma history selection.",
+    "Adapted from veteran_ptsd.json - removes veteran guard, adjusts prevalence rates.",
+    "Supports MIMIC conditioning via mimic_force_ptsd attribute.",
+    "Trauma types: MVA, assault, sexual violence, medical trauma, natural disaster.",
+    "Treatment per ISTSS/APA: trauma-focused CBT (first-line), EMDR, SSRIs/SNRIs.",
+    "SNOMED: 47505003 (Posttraumatic stress disorder).",
+    "Medications: prazosin (nightmares), sertraline (FDA-approved), paroxetine."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "PTSD_Episode",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_ptsd",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 18,
+        "unit": "years"
+      },
+      "direct_transition": "Gender_Split"
+    },
+
+    "Gender_Split": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Female_PTSD",
+          "condition": {
+            "condition_type": "Gender",
+            "gender": "F"
+          }
+        },
+        {
+          "transition": "Male_PTSD"
+        }
+      ]
+    },
+
+    "Female_PTSD": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: women 12-month PTSD prevalence 5.2%.",
+        "Women more likely to experience interpersonal violence trauma."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "PTSD_Episode",
+          "distribution": 0.052
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.948
+        }
+      ]
+    },
+
+    "Male_PTSD": {
+      "type": "Simple",
+      "remarks": [
+        "NIMH: men 12-month PTSD prevalence 1.8%.",
+        "Men more likely MVA, combat, workplace accidents."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "PTSD_Episode",
+          "distribution": 0.018
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.982
+        }
+      ]
+    },
+
+    "PTSD_Episode": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "47505003",
+          "display": "Posttraumatic stress disorder (disorder)"
+        }
+      ],
+      "direct_transition": "PTSD_Encounter"
+    },
+
+    "PTSD_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "PC_PTSD_Screen"
+    },
+
+    "PC_PTSD_Screen": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "91703-0",
+          "display": "Primary Care PTSD Screen for DSM-5 [PC-PTSD-5] total score [Reported]"
+        }
+      ],
+      "range": { "low": 3, "high": 5 },
+      "direct_transition": "PTSD_Diagnosis"
+    },
+
+    "PTSD_Diagnosis": {
+      "type": "Procedure",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "268884003",
+          "display": "Psychiatric evaluation and management (procedure)"
+        }
+      ],
+      "duration": { "low": 45, "high": 75, "unit": "minutes" },
+      "direct_transition": "PTSD_Careplan"
+    },
+
+    "PTSD_Careplan": {
+      "type": "CarePlanStart",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "736253002",
+          "display": "Mental health care plan (record artifact)"
+        }
+      ],
+      "activities": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Trauma-focused cognitive behavioral therapy (regime/therapy)"
+        }
+      ],
+      "direct_transition": "Choose_PTSD_Treatment"
+    },
+
+    "Choose_PTSD_Treatment": {
+      "type": "Simple",
+      "remarks": [
+        "APA 2017 PTSD guidelines: SSRIs/SNRIs + trauma-focused psychotherapy.",
+        "Prazosin for nightmare disorder comorbid with PTSD (VA/DoD guidelines).",
+        "~60% receive pharmacotherapy, ~40% therapy-only initially."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Sertraline",
+          "distribution": 0.30
+        },
+        {
+          "transition": "Prescribe_Paroxetine",
+          "distribution": 0.15
+        },
+        {
+          "transition": "Prescribe_Sertraline_Prazosin",
+          "distribution": 0.15
+        },
+        {
+          "transition": "EMDR_Therapy",
+          "distribution": 0.40
+        }
+      ]
+    },
+
+    "Prescribe_Sertraline": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ptsd_medication",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "36437",
+          "display": "Sertraline 50 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Therapy_Visit"
+    },
+
+    "Prescribe_Paroxetine": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ptsd_medication",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "32937",
+          "display": "Paroxetine 20 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Therapy_Visit"
+    },
+
+    "Prescribe_Sertraline_Prazosin": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "ptsd_medication",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "36437",
+          "display": "Sertraline 50 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Prescribe_Prazosin"
+    },
+
+    "Prescribe_Prazosin": {
+      "type": "MedicationOrder",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "35208",
+          "display": "Prazosin 1 MG Oral Capsule"
+        }
+      ],
+      "direct_transition": "Therapy_Visit"
+    },
+
+    "EMDR_Therapy": {
+      "type": "Procedure",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "840534001",
+          "display": "Eye movement desensitization and reprocessing (procedure)"
+        }
+      ],
+      "duration": { "low": 60, "high": 90, "unit": "minutes" },
+      "direct_transition": "Encounter_End"
+    },
+
+    "Therapy_Visit": {
+      "type": "Procedure",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Trauma-focused cognitive behavioral therapy (regime/therapy)"
+        }
+      ],
+      "duration": { "low": 45, "high": 60, "unit": "minutes" },
+      "direct_transition": "Encounter_End"
+    },
+
+    "Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Follow_Up_Delay"
+    },
+
+    "Follow_Up_Delay": {
+      "type": "Delay",
+      "range": { "low": 6, "high": 8, "unit": "weeks" },
+      "direct_transition": "Follow_Up_Encounter"
+    },
+
+    "Follow_Up_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "ptsd_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Follow_Up_Screen"
+    },
+
+    "Follow_Up_Screen": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "91703-0",
+          "display": "Primary Care PTSD Screen for DSM-5 [PC-PTSD-5] total score [Reported]"
+        }
+      ],
+      "range": { "low": 1, "high": 5 },
+      "direct_transition": "Follow_Up_End"
+    },
+
+    "Follow_Up_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_PTSD_Delay"
+    },
+
+    "Chronic_PTSD_Delay": {
+      "type": "Delay",
+      "range": { "low": 3, "high": 6, "unit": "months" },
+      "direct_transition": "Chronic_PTSD_Encounter"
+    },
+
+    "Chronic_PTSD_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "ptsd_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Chronic_PTSD_Therapy"
+    },
+
+    "Chronic_PTSD_Therapy": {
+      "type": "Procedure",
+      "reason": "ptsd_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "229070002",
+          "display": "Cognitive behavioral therapy (regime/therapy)"
+        }
+      ],
+      "duration": { "low": 45, "high": 60, "unit": "minutes" },
+      "direct_transition": "Chronic_End"
+    },
+
+    "Chronic_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_PTSD_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}

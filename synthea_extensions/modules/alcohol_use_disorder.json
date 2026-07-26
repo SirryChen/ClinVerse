@@ -1,0 +1,427 @@
+{
+  "name": "Alcohol Use Disorder General Population",
+  "remarks": [
+    "Models Alcohol Use Disorder (AUD) in the general US population.",
+    "Epidemiology: SAMHSA NSDUH 2019; NIAAA Alcohol Facts and Statistics 2021.",
+    "12-month AUD prevalence: 14.5% of US adults; severe AUD: 5.8%.",
+    "12-month male: 16.7%, female: 10.3% (NIAAA 2021).",
+    "Hospital-admitted patients ~9.5% have AUD history (MIMIC observation).",
+    "Supports MIMIC conditioning via mimic_force_alcohol_use_disorder attribute.",
+    "Complications: Wernicke-Korsakoff, liver injury, pancreatitis, withdrawal seizures.",
+    "Treatment per NIAAA guidelines: naltrexone, acamprosate, disulfiram; thiamine supplementation.",
+    "SNOMED: 7200002 (Alcoholism), 66590003 (Alcohol withdrawal syndrome).",
+    "ICD-10 equivalent: F10.20 (Alcohol dependence, uncomplicated)."
+  ],
+  "states": {
+    "Initial": {
+      "type": "Initial",
+      "direct_transition": "Check_MIMIC_Force"
+    },
+
+    "Check_MIMIC_Force": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "AUD_Onset",
+          "condition": {
+            "condition_type": "Attribute",
+            "attribute": "mimic_force_alcohol_use_disorder",
+            "operator": "is not nil"
+          }
+        },
+        {
+          "transition": "Age_Guard"
+        }
+      ]
+    },
+
+    "Age_Guard": {
+      "type": "Guard",
+      "allow": {
+        "condition_type": "Age",
+        "operator": ">=",
+        "quantity": 21,
+        "unit": "years"
+      },
+      "direct_transition": "Gender_Split"
+    },
+
+    "Gender_Split": {
+      "type": "Simple",
+      "conditional_transition": [
+        {
+          "transition": "Female_AUD",
+          "condition": {
+            "condition_type": "Gender",
+            "gender": "F"
+          }
+        },
+        {
+          "transition": "Male_AUD"
+        }
+      ]
+    },
+
+    "Male_AUD": {
+      "type": "Simple",
+      "remarks": ["NIAAA 2021: 12-month AUD male prevalence 16.7%."],
+      "distributed_transition": [
+        {
+          "transition": "AUD_Onset",
+          "distribution": 0.095
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.905
+        }
+      ]
+    },
+
+    "Female_AUD": {
+      "type": "Simple",
+      "remarks": ["NIAAA 2021: 12-month AUD female prevalence 10.3%."],
+      "distributed_transition": [
+        {
+          "transition": "AUD_Onset",
+          "distribution": 0.060
+        },
+        {
+          "transition": "Terminal",
+          "distribution": 0.940
+        }
+      ]
+    },
+
+    "AUD_Onset": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "7200002",
+          "display": "Alcoholism (disorder)"
+        }
+      ],
+      "direct_transition": "AUD_Encounter"
+    },
+
+    "AUD_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "AUDIT_Assessment"
+    },
+
+    "AUDIT_Assessment": {
+      "type": "Observation",
+      "category": "survey",
+      "unit": "{score}",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "75623-0",
+          "display": "Alcohol Use Disorders Identification Test - Consumption (AUDIT-C) [Reported]"
+        }
+      ],
+      "range": { "low": 8, "high": 12 },
+      "direct_transition": "AUD_Labs"
+    },
+
+    "AUD_Labs": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "24325-3",
+          "display": "Hepatic function panel - Serum or Plasma"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1742-6",
+              "display": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 30, "high": 150 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1920-8",
+              "display": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 40, "high": 200 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "2324-2",
+              "display": "Gamma glutamyl transferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 50, "high": 300 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1975-2",
+              "display": "Bilirubin.total [Mass/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "mg/dL",
+          "range": { "low": 0.8, "high": 3.5 }
+        }
+      ],
+      "direct_transition": "Thiamine_Supplement"
+    },
+
+    "Thiamine_Supplement": {
+      "type": "MedicationOrder",
+      "reason": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "897729",
+          "display": "Thiamine 100 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "Choose_AUD_Treatment"
+    },
+
+    "Choose_AUD_Treatment": {
+      "type": "Simple",
+      "remarks": [
+        "NIAAA/ASAM guidelines: naltrexone first-line if no opioid use.",
+        "Only ~8% of AUD patients receive FDA-approved pharmacotherapy (NIAAA gap data).",
+        "Modeled higher rate for symptomatic/hospital-presenting patients."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Prescribe_Naltrexone",
+          "distribution": 0.35
+        },
+        {
+          "transition": "Prescribe_Acamprosate",
+          "distribution": 0.15
+        },
+        {
+          "transition": "Behavioral_Tx_Only",
+          "distribution": 0.50
+        }
+      ]
+    },
+
+    "Prescribe_Naltrexone": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "aud_medication",
+      "reason": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "1091272",
+          "display": "Naltrexone 50 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "AUD_Counseling"
+    },
+
+    "Prescribe_Acamprosate": {
+      "type": "MedicationOrder",
+      "assign_to_attribute": "aud_medication",
+      "reason": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "712563",
+          "display": "Acamprosate Calcium 333 MG Oral Tablet"
+        }
+      ],
+      "direct_transition": "AUD_Counseling"
+    },
+
+    "Behavioral_Tx_Only": {
+      "type": "Procedure",
+      "reason": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "413473000",
+          "display": "Counseling about alcohol consumption (procedure)"
+        }
+      ],
+      "duration": { "low": 30, "high": 60, "unit": "minutes" },
+      "direct_transition": "AUD_Encounter_End"
+    },
+
+    "AUD_Counseling": {
+      "type": "Procedure",
+      "reason": "alcohol_use_disorder_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "413473000",
+          "display": "Counseling about alcohol consumption (procedure)"
+        }
+      ],
+      "duration": { "low": 30, "high": 60, "unit": "minutes" },
+      "direct_transition": "AUD_Encounter_End"
+    },
+
+    "AUD_Encounter_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Check_Withdrawal"
+    },
+
+    "Check_Withdrawal": {
+      "type": "Simple",
+      "remarks": [
+        "~20% of AUD patients experience clinically significant withdrawal.",
+        "Severe withdrawal (seizures) in ~3-5% of all AUD patients."
+      ],
+      "distributed_transition": [
+        {
+          "transition": "Alcohol_Withdrawal",
+          "distribution": 0.20
+        },
+        {
+          "transition": "Chronic_Monitoring_Delay",
+          "distribution": 0.80
+        }
+      ]
+    },
+
+    "Alcohol_Withdrawal": {
+      "type": "ConditionOnset",
+      "assign_to_attribute": "alcohol_withdrawal_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "66590003",
+          "display": "Alcohol withdrawal syndrome (disorder)"
+        }
+      ],
+      "direct_transition": "Withdrawal_Encounter"
+    },
+
+    "Withdrawal_Encounter": {
+      "type": "Encounter",
+      "encounter_class": "emergency",
+      "reason": "alcohol_withdrawal_dx",
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "50849002",
+          "display": "Emergency room admission (procedure)"
+        }
+      ],
+      "direct_transition": "Prescribe_Chlordiazepoxide"
+    },
+
+    "Prescribe_Chlordiazepoxide": {
+      "type": "MedicationOrder",
+      "reason": "alcohol_withdrawal_dx",
+      "codes": [
+        {
+          "system": "RxNorm",
+          "code": "308460",
+          "display": "Chlordiazepoxide 25 MG Oral Capsule"
+        }
+      ],
+      "direct_transition": "Withdrawal_End"
+    },
+
+    "Withdrawal_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_Monitoring_Delay"
+    },
+
+    "Chronic_Monitoring_Delay": {
+      "type": "Delay",
+      "range": { "low": 3, "high": 6, "unit": "months" },
+      "direct_transition": "Chronic_AUD_Monitoring"
+    },
+
+    "Chronic_AUD_Monitoring": {
+      "type": "Encounter",
+      "encounter_class": "ambulatory",
+      "reason": "alcohol_use_disorder_dx",
+      "wellness": true,
+      "codes": [
+        {
+          "system": "SNOMED-CT",
+          "code": "185349003",
+          "display": "Encounter for check up (procedure)"
+        }
+      ],
+      "direct_transition": "Monitoring_Labs"
+    },
+
+    "Monitoring_Labs": {
+      "type": "DiagnosticReport",
+      "codes": [
+        {
+          "system": "LOINC",
+          "code": "24325-3",
+          "display": "Hepatic function panel - Serum or Plasma"
+        }
+      ],
+      "observations": [
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1742-6",
+              "display": "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 25, "high": 120 }
+        },
+        {
+          "category": "laboratory",
+          "codes": [
+            {
+              "system": "LOINC",
+              "code": "1920-8",
+              "display": "Aspartate aminotransferase [Enzymatic activity/volume] in Serum or Plasma"
+            }
+          ],
+          "unit": "U/L",
+          "range": { "low": 30, "high": 160 }
+        }
+      ],
+      "direct_transition": "Monitoring_End"
+    },
+
+    "Monitoring_End": {
+      "type": "EncounterEnd",
+      "direct_transition": "Chronic_Monitoring_Delay"
+    },
+
+    "Terminal": {
+      "type": "Terminal"
+    }
+  }
+}
