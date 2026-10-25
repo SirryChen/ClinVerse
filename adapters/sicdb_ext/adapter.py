@@ -14,6 +14,7 @@ for the full list):
     just an alias for physical_exam rather than something extracted from it.
 """
 from __future__ import annotations
+from core.icd import block
 
 import json
 from pathlib import Path
@@ -26,7 +27,7 @@ from core.schema import Admission, admission_from_parts
 
 from .condition_priors import extract_condition_priors as _extract_condition_priors
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]  # parent workspace
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../train-platform
 _DEFAULT_DATA_DIR = _REPO_ROOT / "dataset" / "sicdb-ext"
 
 
@@ -194,7 +195,7 @@ class SicdbAdapter:
             hadm_ids = hadm_ids[:limit]
         for hadm_id in hadm_ids:
             admission = _build_admission(hadm_id, tables)
-            if admission:
+            if admission and block(admission["primary_diagnosis"].get("icd10_code")):
                 yield admission
 
     def load_admission(self, case_id: str) -> Admission:

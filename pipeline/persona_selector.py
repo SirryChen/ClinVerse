@@ -9,6 +9,7 @@ Scores candidates on:
 from __future__ import annotations
 
 import re
+from .trimmer import reveals_diagnosis
 
 from .trimmer import trim_persona
 
@@ -69,13 +70,8 @@ def prior_satisfaction_score(persona: dict, condition_flags: dict[str, bool]) ->
 
 def safety_score(persona: dict, forbidden_clues: list[str]) -> float:
     """Return 0.0 if persona contains any forbidden clue words, else 1.0."""
-    all_text = " ".join(_condition_displays(persona))
-    for clue in forbidden_clues:
-        clue_words = set(re.findall(r"\w{4,}", clue.lower()))
-        text_words = set(re.findall(r"\w{4,}", all_text))
-        overlap = clue_words & text_words - {"with", "without", "chronic", "acute",
-                                              "unspecified", "disorder", "disease"}
-        if len(overlap) >= 3:
+    for condition in persona.get("conditions", []):
+        if any(reveals_diagnosis(condition.get("display", ""), clue) for clue in forbidden_clues):
             return 0.0
     return 1.0
 
@@ -122,8 +118,7 @@ def select_persona(
 ) -> list[dict]:
     """Select top-k candidates from conditioned generation output.
 
-    Returns an empty list if generation produced no usable personas
-    (both Tier 1 and Tier 2 failed). The caller should skip the case.
+    Returns candidates ordered by composite score.
     """
     personas = generation_result.get("personas", [])
     priors = generation_result.get("priors", {})

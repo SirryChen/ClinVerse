@@ -11,7 +11,7 @@ import logging
 import os
 from typing import Any, Iterator
 
-from config import (
+from preprocessing.mimic_iv_ext.predata.config import (
     BASE_OUT,
     OUT_HPI, OUT_PE, OUT_DISCHARGE_DX, OUT_DISCHARGE_PR,
     OUT_LABS, OUT_MICRO, OUT_RADIOLOGY,
@@ -33,7 +33,7 @@ _SCHEMAS: dict[str, list[str]] = {
                        "ref_range_lower", "ref_range_upper"],
     # micro: added test_name, spec_type_desc, antibiogram
     OUT_MICRO:        ["hadm_id", "test_itemid", "test_name",
-                       "spec_itemid", "spec_type_desc", "valuestr", "antibiogram"],
+                       "spec_itemid", "spec_type_desc", "valuestr", "antibiogram", "is_abnormal"],
     OUT_RADIOLOGY:    ["hadm_id", "note_id", "modality", "region", "exam_name", "text"],
     # icd_diagnosis: added seq_num, icd_code, icd_version
     OUT_ICD_DX:       ["hadm_id", "seq_num", "icd_code", "icd_version", "icd_diagnosis"],

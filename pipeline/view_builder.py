@@ -1,6 +1,7 @@
 """Build the four simulation views from admission + trimmed persona."""
 
 from __future__ import annotations
+from core.presentation import initial_presentation
 
 
 def _social_summary(trimmed_persona: dict) -> dict:
@@ -39,12 +40,7 @@ def build_views(
     # patient_actor_view  – used by Patient Actor LLM
     # ---------------------------------------------------------------
     patient_actor_view = {
-        "initial_presentation": {
-            "age": demo.get("anchor_age"),
-            "gender": demo.get("gender"),
-            "admission_type": demo.get("admission_type"),
-            "vital_signs": admission.get("vital_signs", ""),
-        },
+        "initial_presentation": initial_presentation(patient_information_units or [], demo, admission.get("vital_signs", "")),
         "symptom_context": admission.get("hpi", ""),
         "medical_background": {
             "past_medical_history": [

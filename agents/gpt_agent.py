@@ -6,8 +6,8 @@ from copy import deepcopy
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
+from core.api_retry import call_with_retry
 
-from .base_agent import BaseDoctorAgent
 from .tools import DOCTOR_TOOLS, build_doctor_tools
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ If vital signs are clearly unstable or there are red-flag findings (shock, activ
 == Information gatekeeper assumptions ==
 - The patient can report symptoms and personal history, but cannot reliably report objective lab values, imaging findings, pathology, microbiology, or the final diagnosis.
 - Use ask_patient for subjective history only. Use request_physical_exam, order_tests, and order_imaging for objective findings.
-- If a requested objective result is unavailable, treat that as unavailable case evidence rather than a hint toward or away from the diagnosis.
+{missing_result_instruction}
 
 == Rules ==
 - Call EXACTLY ONE tool per turn. Never call multiple tools at once.
@@ -124,7 +124,7 @@ _SYSTEM_PROMPT_ZH = """\
 == 信息 gatekeeper 假设 ==
 - 患者只能可靠提供症状和本人知道的病史，不能可靠提供化验数值、影像发现、病理、微生物结果或最终诊断。
 - ask_patient 只用于主观病史；客观发现必须通过 request_physical_exam、order_tests、order_imaging 获取。
-- 如果某项客观结果不可用，把它当作本病例没有可用证据，不要当作支持或排除某个诊断的暗示。
+{missing_result_instruction}
 
 == 规则 ==
 - 每轮调用且仅调用一个工具，禁止同时调用多个工具。
@@ -139,6 +139,26 @@ _SYSTEM_PROMPT_ZH = """\
 
 _IMAGING_LINE_EN = "- order_imaging      — order imaging (chest_xray, ct_abdomen_pelvis, ultrasound_abdomen, mri_head, etc.)\n"
 _IMAGING_LINE_ZH = "- order_imaging：开具影像检查（胸部X线chest_xray、腹部CT ct_abdomen_pelvis、腹部超声ultrasound_abdomen、头颅MRI mri_head等）\n"
+
+_MISSING_RESULT_NEUTRAL_EN = (
+    "- If a requested objective result is unavailable, treat that as unavailable case evidence "
+    "rather than a hint toward or away from the diagnosis."
+)
+_MISSING_RESULT_CUE_EN = (
+    "- In this run, missing test results are informative: when a requested test is reported as "
+    "not performed or unavailable, explicitly use that missingness as a diagnostic cue. Consider "
+    "which candidate diseases become less likely because the source record lacks that test, and "
+    "use the cue to rule out diseases when appropriate."
+)
+_MISSING_RESULT_NEUTRAL_ZH = (
+    "- 如果某项客观结果不可用，把它当作本病例没有可用证据，"
+    "不要当作支持或排除某个诊断的暗示。"
+)
+_MISSING_RESULT_CUE_ZH = (
+    "- 在本次运行中，检查结果的缺失本身包含信息：当请求的检查被返回为“本病例未执行此检查”"
+    "或“结果不可用”时，请明确利用这种缺失作为诊断线索。思考原始记录中没有该检查会使哪些候选疾病的可能性降低，"
+    "并在合适时候据此排除疾病。"
+)
 
 # Injected on the final allowed turn so the episode always converges to a real
 # diagnosis instead of running out the clock with an empty max_turns_reached
@@ -155,7 +175,7 @@ _FORCE_FINALIZE_ZH = (
 )
 
 
-class GPTDoctorAgent(BaseDoctorAgent):
+class GPTDoctorAgent:
     def __init__(
         self,
         client: OpenAI,
@@ -165,6 +185,8 @@ class GPTDoctorAgent(BaseDoctorAgent):
         extra_body: dict | None = None,
         memory_context: str | None = None,
         message_style: str = "openai",
+        use_missingness_diagnostic_cue: bool = False,
+        tools_schema: list[dict] | None = None,
     ):
         if message_style not in {"openai", "alternating_user_assistant"}:
             raise ValueError(
@@ -176,11 +198,28 @@ class GPTDoctorAgent(BaseDoctorAgent):
         self._extra_body = extra_body or {}
         self._message_style = message_style
 
-        has_radiology = adapter.has_radiology if adapter is not None else True
+        has_radiology = (any(t["function"]["name"] == "order_imaging" for t in tools_schema)
+                         if tools_schema is not None else adapter.has_radiology if adapter is not None else True)
         if language == "zh":
-            prompt = _SYSTEM_PROMPT_ZH.format(imaging_line=_IMAGING_LINE_ZH if has_radiology else "")
+            missing_result_instruction = (
+                _MISSING_RESULT_CUE_ZH
+                if use_missingness_diagnostic_cue
+                else _MISSING_RESULT_NEUTRAL_ZH
+            )
+            prompt = _SYSTEM_PROMPT_ZH.format(
+                imaging_line=_IMAGING_LINE_ZH if has_radiology else "",
+                missing_result_instruction=missing_result_instruction,
+            )
         else:
-            prompt = _SYSTEM_PROMPT_EN.format(imaging_line=_IMAGING_LINE_EN if has_radiology else "")
+            missing_result_instruction = (
+                _MISSING_RESULT_CUE_EN
+                if use_missingness_diagnostic_cue
+                else _MISSING_RESULT_NEUTRAL_EN
+            )
+            prompt = _SYSTEM_PROMPT_EN.format(
+                imaging_line=_IMAGING_LINE_EN if has_radiology else "",
+                missing_result_instruction=missing_result_instruction,
+            )
         if memory_context:
             prompt = prompt.rstrip() + "\n\n" + memory_context.strip() + "\n"
         self._system_prompt = prompt
@@ -193,8 +232,7 @@ class GPTDoctorAgent(BaseDoctorAgent):
             else [{"role": "system", "content": prompt}]
         )
 
-        self._tools = build_doctor_tools(adapter) if adapter is not None else DOCTOR_TOOLS
-
+        self._tools = deepcopy(tools_schema) if tools_schema is not None else (build_doctor_tools(adapter) if adapter is not None else deepcopy(DOCTOR_TOOLS))
     def step(self, new_messages: list[dict], force_finalize: bool = False) -> tuple[str, dict]:
         """Append new_messages, call LLM, return (function_name, function_args, call_id).
 
@@ -224,7 +262,8 @@ class GPTDoctorAgent(BaseDoctorAgent):
             tools = [t for t in self._tools if t["function"]["name"] == "finalize_case"]
         else:
             tools = self._tools
-        response = self._client.chat.completions.create(
+        response = call_with_retry(
+            self._client.chat.completions.create,
             model=self._model,
             # The history is extended after the request returns.  Snapshot it
             # so clients/mocks never observe later in-place history changes.

@@ -119,7 +119,6 @@ def iter_trace_paths(run_dir: Path, repeat: str | None) -> list[Path]:
         paths = sorted((repeat_dir / "traces").glob("*.json"))
     else:
         paths = sorted(run_dir.glob("repeat_*/traces/*.json"))
-        # Support legacy one-repeat runs that store traces directly under run-id.
         paths.extend(sorted((run_dir / "traces").glob("*.json")))
     if not paths:
         raise FileNotFoundError(f"No trajectory JSON files found under {run_dir}")

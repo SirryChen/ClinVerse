@@ -762,9 +762,10 @@ public class Generator {
       Entity entity = (Entity) person.attributes.get(Person.ENTITY);
       if (entity != null) {
         Map<String, Object> priors = mimicPriors.get(entity.getIndividualId());
-        if (priors != null) {
-          person.attributes.putAll(priors);
+        if (priors == null) {
+          throw new IllegalStateException("Missing conditioning priors for " + entity.getIndividualId());
         }
+        person.attributes.putAll(priors);
       }
     }
 
@@ -1106,8 +1107,7 @@ public class Generator {
           result.put(individualId, priors);
         }
       } catch (IOException e) {
-        System.err.printf("Warning: could not load MIMIC prior file %s: %s%n",
-            name, e.getMessage());
+        throw new IllegalStateException("Unable to read conditioning priors: " + name, e);
       }
     }
     return result;

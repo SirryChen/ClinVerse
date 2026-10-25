@@ -29,7 +29,7 @@ def _normalize(text: str) -> str:
 # lab_provider_catalog.json share verbatim (e.g. "white_blood_cells") even
 # though the underlying item-id spaces and source languages differ — so one
 # table works for every dataset's catalog-resolved items. Items only found
-# via the lab_test_mapping.csv fallback (no canonical_name) have no entry
+# via the lab_test_mapping.csv label lookup (no canonical_name) have no entry
 # here and just render in their source-language label.
 LAB_NAME_ZH: dict[str, str] = {
     "white_blood_cells": "白细胞计数",
@@ -111,13 +111,13 @@ class JsonLabCatalog:
         # hospital's lab dictionary but weren't curated into the orderable
         # catalog above (e.g. ascites/rare panels). Covers the long tail of
         # itemids that show up in real admissions but have no CatalogItem.
-        self._itemid_fallback: dict[str, str] = {}
+        self._itemid_labels: dict[str, str] = {}
         if mapping_csv_path is not None:
             mapping_csv_path = Path(mapping_csv_path)
             if mapping_csv_path.exists():
                 with open(mapping_csv_path, encoding="utf-8", newline="") as f:
                     for row in csv.DictReader(f):
-                        self._itemid_fallback[str(row["itemid"])] = row["label"]
+                        self._itemid_labels[str(row["itemid"])] = row["label"]
 
     def resolve(self, test_name: str) -> Optional[CatalogItem]:
         return self._lookup.get(_normalize(test_name))
@@ -131,7 +131,7 @@ class JsonLabCatalog:
         item = self._itemid_lookup.get(key)
         if item is not None:
             return item
-        label = self._itemid_fallback.get(key)
+        label = self._itemid_labels.get(key)
         if label is not None:
             return {"canonical_name": "", "display_name": label, "itemids": [key]}
         return None

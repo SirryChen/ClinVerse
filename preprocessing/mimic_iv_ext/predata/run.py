@@ -22,6 +22,10 @@ Usage:
     python preprocessing/mimic_iv_ext/predata/run.py [--limit N] [--min-pe-length 40]
 """
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 
 import argparse
 import gc
@@ -41,15 +45,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-import config    # noqa: E402
-import loader    # noqa: E402
-import discharge # noqa: E402
-import labs      # noqa: E402
-import radiology # noqa: E402
-import sanitize  # noqa: E402
-import export    # noqa: E402
+from preprocessing.mimic_iv_ext.predata import config
+from preprocessing.mimic_iv_ext.predata import loader
+from preprocessing.mimic_iv_ext.predata import discharge
+from preprocessing.mimic_iv_ext.predata import labs
+from preprocessing.mimic_iv_ext.predata import radiology
+from preprocessing.mimic_iv_ext.predata import sanitize
+from preprocessing.mimic_iv_ext.predata import export
 
-from config import (  # noqa: E402
+from preprocessing.mimic_iv_ext.predata.config import (  # noqa: E402
     OUT_HPI, OUT_PE, OUT_DISCHARGE_DX, OUT_DISCHARGE_PR,
     OUT_LABS, OUT_MICRO, OUT_RADIOLOGY,
     OUT_ICD_DX, OUT_ICD_PROC, OUT_LAB_MAPPING,

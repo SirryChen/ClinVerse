@@ -39,6 +39,10 @@ Radiology catalog structure:
 """
 
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 
 import csv
 import json
@@ -48,7 +52,7 @@ from collections import Counter, defaultdict
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
-DATASET_DIR = os.path.join(REPO_ROOT, "dataset", "mimic-iv-ext")
+DATASET_DIR = os.environ.get("CLINVERSE_NORMALIZED_DIR", os.path.join(REPO_ROOT, "data", "normalized", "mimic-iv-ext"))
 
 LAB_MAPPING_CSV = os.path.join(DATASET_DIR, "lab_test_mapping.csv")
 RADIOLOGY_CSV   = os.path.join(DATASET_DIR, "radiology_reports.csv")

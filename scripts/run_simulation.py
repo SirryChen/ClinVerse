@@ -46,7 +46,9 @@ def main():
 
     session = SimulationSession.from_case_file(
         case_path=case_path,
-        patient_openai_config=cfg["llm_providers"][cfg["default_llm_provider"]],
+        patient_openai_config=cfg["llm_providers"][cfg["default_patient_provider"]],
+        doctor_openai_config=cfg["llm_providers"][cfg["default_doctor_provider"]],
+        lab_openai_config=cfg["llm_providers"][cfg["default_lab_provider"]],
         datasets_config=datasets_config,
         max_turns=cfg["simulation"]["max_turns"],
         language=cfg["simulation"].get("language", "en"),

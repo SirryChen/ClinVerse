@@ -1,12 +1,4 @@
-"""MIMIC comorbidity-prior extraction: secondary (seq_num>=2) coded ICD
-diagnoses -> mimic_force_X Synthea injection flags.
-
-Moved unchanged from the old pipeline/mimic_prior_extractor.py — MIMIC's
-diagnoses_icd table genuinely has coded secondary diagnoses, so prefix-
-matching ICD codes works here. (SICdb does not have this; see
-adapters/sicdb_ext/condition_priors.py for why it needs a completely
-different source signal.)
-"""
+"""Condition priors from secondary ICD diagnoses."""
 from __future__ import annotations
 
 from core.schema import Admission

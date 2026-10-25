@@ -5,17 +5,10 @@ from __future__ import annotations
 import json
 
 from openai import OpenAI
+from core.api_retry import call_with_retry
 
 from .base import BaseProvider
 from pipeline.personality_sampler import format_for_prompt
-
-# Legacy evidence types a patient could plausibly disclose through conversation.
-# New cases should use patient_information_units instead; this stays as a
-# fallback for existing case JSONs.
-_DISCLOSABLE_TYPES = (
-    "past_medical_history", "medication", "allergy",
-    "immunization", "social_history", "hpi",
-)
 
 # Forces the model to self-report exactly which candidate facts its reply
 # touched on, instead of guessing from topic labels or keyword overlap —
@@ -56,14 +49,6 @@ You are a patient-facing gatekeeper: disclose only what this patient could perso
 Age: {age} | Gender: {gender} | Admission type: {admission_type}
 Vital signs on arrival: {vital_signs}
 
-== Your Medical Background ==
-Past medical history: {pmh}
-Current medications: {medications}
-Allergies: {allergies}
-
-Social history:
-{social_history}
-
 == Why You Are Here ==
 The following is your hidden patient-known information. Respond as a patient would — in plain language, first person.
 Note: some identifiers appear as "___" (redacted) — just speak naturally around them.
@@ -93,14 +78,6 @@ _SYSTEM_TEMPLATE_ZH = """\
 == 你的基本信息 ==
 年龄：{age} | 性别：{gender} | 就诊类型：{admission_type}
 入院时生命体征：{vital_signs}
-
-== 你的医疗背景 ==
-既往病史：{pmh}
-目前用药：{medications}
-过敏史：{allergies}
-
-社会史：
-{social_history}
 
 == 你来就诊的原因 ==
 以下是你本人知道、可以在问诊中透露的隐藏信息。
@@ -160,7 +137,8 @@ class PatientActor(BaseProvider):
             messages.append({"role": "assistant", "content": turn["response"]})
         messages.append({"role": "user", "content": question})
 
-        completion = self._client.chat.completions.create(
+        completion = call_with_retry(
+            self._client.chat.completions.create,
             model=self._model,
             messages=messages,
             temperature=0.7,
@@ -172,7 +150,7 @@ class PatientActor(BaseProvider):
         response_text = (args.get("reply") or "").strip()
 
         candidate_ids = {c["info_id"] for c in candidates}
-        raw_disclosed = args.get("disclosed_info_ids", args.get("disclosed_evidence_ids", []))
+        raw_disclosed = args.get("disclosed_info_ids", [])
         disclosed = [eid for eid in raw_disclosed if eid in candidate_ids]
 
         return response_text, {
@@ -181,9 +159,7 @@ class PatientActor(BaseProvider):
         }
 
     def _disclosable_candidates(self, case: dict) -> list[dict]:
-        units = case.get("patient_information_units") or case.get("simulation_views", {}).get(
-            "patient_actor_view", {}
-        ).get("patient_information_units", [])
+        units = case["patient_information_units"]
         if units:
             return [
                 {
@@ -198,20 +174,7 @@ class PatientActor(BaseProvider):
                 and not item.get("initially_visible")
             ]
 
-        # Backward-compatible fallback for old cases.
-        return [
-            {
-                "info_id": item["evidence_id"],
-                "text": item.get("content", ""),
-                "category": item.get("type", ""),
-                "source": item.get("source", ""),
-                "importance": "supporting",
-            }
-            for item in case.get("evidence_inventory", [])
-            if not item.get("initially_visible")
-            and item.get("source") == "synthea"
-            and item.get("type") in _DISCLOSABLE_TYPES
-        ]
+        raise ValueError("Patient simulation requires information units")
 
     def _render_candidates(self, candidates: list[dict]) -> str:
         if not candidates:
@@ -222,25 +185,11 @@ class PatientActor(BaseProvider):
 
     def _build_system_prompt(self, view: dict) -> str:
         init = view.get("initial_presentation", {})
-        bg = view.get("medical_background", {})
-        social = bg.get("social_history", {})
-
+        gender = str(init.get("gender", "unknown"))
+        admission_type = str(init.get("admission_type", ""))
         if self._language == "zh":
-            social_lines = "\n".join(f"  {k}：{v}" for k, v in social.items()) or "  未记录"
-            pmh = "、".join(bg.get("past_medical_history", [])) or "无"
-            meds = "、".join(bg.get("medications", [])) or "无"
-            allergies = "、".join(bg.get("allergies", [])) or "无已知药物过敏"
-            gender_raw = str(init.get("gender", ""))
-            gender = _GENDER_ZH.get(gender_raw, gender_raw)
-            adm_raw = str(init.get("admission_type", ""))
-            admission_type = _ADMISSION_ZH.get(adm_raw, adm_raw)
-        else:
-            social_lines = "\n".join(f"  {k}: {v}" for k, v in social.items()) or "  Not documented"
-            pmh = ", ".join(bg.get("past_medical_history", [])) or "None known"
-            meds = ", ".join(bg.get("medications", [])) or "None"
-            allergies = ", ".join(bg.get("allergies", [])) or "NKDA"
-            gender = str(init.get("gender", "unknown"))
-            admission_type = str(init.get("admission_type", ""))
+            gender = _GENDER_ZH.get(gender, gender)
+            admission_type = _ADMISSION_ZH.get(admission_type, admission_type)
 
         personality_data = view.get("personality", {})
         personality_text = (
@@ -250,7 +199,6 @@ class PatientActor(BaseProvider):
         )
         symptom_context = self._render_patient_known_context(
             view.get("patient_information_units", []),
-            fallback=view.get("symptom_context", "").strip(),
         )
 
         return self._template.format(
@@ -258,21 +206,17 @@ class PatientActor(BaseProvider):
             gender=gender,
             admission_type=admission_type,
             vital_signs=init.get("vital_signs", "not recorded" if self._language == "en" else "未记录"),
-            pmh=pmh,
-            medications=meds,
-            allergies=allergies,
-            social_history=social_lines,
             symptom_context=symptom_context,
             personality=personality_text,
         )
 
-    def _render_patient_known_context(self, units: list[dict], fallback: str) -> str:
+    def _render_patient_known_context(self, units: list[dict]) -> str:
         visible = [
             u for u in units
             if u.get("patient_visible", True)
         ]
         if not visible:
-            return fallback
+            raise ValueError("Patient simulation requires patient-visible information units")
         grouped: dict[str, list[str]] = {}
         for u in visible:
             grouped.setdefault(u.get("category", "info"), []).append(u.get("text", ""))

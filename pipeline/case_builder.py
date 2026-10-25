@@ -1,9 +1,4 @@
-"""Assemble and persist enhanced cases from MIMIC admission + Synthea generation.
-
-Conditioned mode: each MIMIC admission drives a fresh Synthea run via
-run_conditioned_generation() (Tier 1: full_conditioned, Tier 2: demographic_conditioned).
-Cases where both tiers fail are skipped and counted in stats["skipped_no_match"].
-"""
+"""Assemble and persist cases from EHR admissions and conditioned Synthea generation."""
 
 from __future__ import annotations
 
@@ -18,6 +13,7 @@ from .view_builder import build_views
 from .auditor import audit
 from .personality_sampler import sample_personality
 from .patient_info_units import build_patient_information_units
+from core.icd import block
 
 
 def build_case(
@@ -28,12 +24,11 @@ def build_case(
 ) -> dict:
     """Assemble a full enhanced case using the rank-1 Synthea candidate.
 
-    Works with candidates from both pool-based matching (matcher.py) and
-    conditioned generation (persona_selector.py). The candidate dict may
-    contain pre-trimmed persona (trimmed_persona key) from the selector,
-    or a raw persona (persona key) that needs trimming here.
     """
-    assert top_k_candidates, "top_k_candidates must be non-empty"
+    if not top_k_candidates:
+        raise ValueError("Supply at least one patient candidate")
+    if not block(admission["primary_diagnosis"].get("icd10_code")):
+        raise ValueError("Cases require a mapped ICD-10 primary diagnosis")
 
     best = top_k_candidates[0]
     persona = best["persona"]
@@ -95,7 +90,6 @@ def build_case(
             "hidden_from_patient_simulator": True,
         },
         "core_admission": {
-            # Was hardcoded "mimic-iv" — now the adapter-reported source name
             # ("mimic-iv-ext" | "sicdb-ext" | ...), which is exactly what
             # simulation/session.py and scripts/run_batch_eval.py use to pick
             # the right DatasetAdapter (lab catalog, radiology availability,
@@ -180,12 +174,9 @@ def load_index(cases_dir: str | Path) -> dict[str, dict]:
                 line = line.strip()
                 if not line:
                     continue
-                try:
-                    existing = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+                existing = json.loads(line)
                 if not existing.get("case_id"):
-                    continue
+                    raise ValueError("Case index entries require case_id")
                 entries[existing["case_id"]] = existing
     return entries
 
@@ -206,50 +197,6 @@ def update_index(case: dict, cases_dir: str | Path) -> None:
     entry = _case_index_entry(case)
     entries[entry["case_id"]] = entry
     write_index(entries, cases_dir)
-
-
-def build_cases_batch(
-    admissions,            # Iterable[dict]
-    personas: list[dict],
-    cases_dir: str | Path,
-    top_k: int = 3,
-    min_score: float = 0.0,
-    verbose: bool = True,
-    adapter=None,           # core.ports.DatasetAdapter — used to render readable lab evidence labels
-    info_extractor=None,
-) -> dict:
-    """Build cases using the classic pool-based matching pipeline."""
-    from .matcher import match_admission
-
-    cases_dir = Path(cases_dir)
-    stats = {"processed": 0, "matched": 0, "skipped_no_match": 0, "written": 0}
-
-    index_entries = load_index(cases_dir)
-    index_dirty = False
-    for admission in admissions:
-        stats["processed"] += 1
-        candidates = match_admission(admission, personas, top_k=top_k, min_score=min_score)
-        if not candidates:
-            stats["skipped_no_match"] += 1
-            if verbose:
-                print(f"[skip] {admission['case_id']} — no Synthea match")
-            continue
-
-        stats["matched"] += 1
-        case = build_case(admission, candidates, adapter=adapter, info_extractor=info_extractor)
-        save_case(case, cases_dir)
-        entry = _case_index_entry(case)
-        index_entries[entry["case_id"]] = entry
-        index_dirty = True
-        stats["written"] += 1
-
-        if verbose and stats["written"] % 100 == 0:
-            print(f"[pipeline] written {stats['written']} cases")
-
-    if index_dirty:
-        write_index(index_entries, cases_dir)
-
-    return stats
 
 
 def build_cases_conditioned_batch(
@@ -274,11 +221,11 @@ def build_cases_conditioned_batch(
          coded secondary ICD diagnoses for MIMIC, boolean precondition fields
          for SICdb (see adapters/*/condition_priors.py)
       2. Builds fixedRecordPath Entity JSON + per-patient prior JSON files
-      3. Runs Synthea (Tier 1: full_conditioned, Tier 2: demographic_conditioned)
+      3. Runs conditioned Synthea generation
       4. Scores and ranks candidates; picks top-k
       5. Assembles and saves the case
 
-    Cases where both tiers produce 0 usable personas are counted in
+    Cases without usable personas are counted in
     stats["skipped_no_match"] and not written to disk.
     """
     from .conditioned_synthea_runner import run_conditioned_generation_batch
@@ -290,7 +237,6 @@ def build_cases_conditioned_batch(
     stats = {
         "processed": 0,
         "full_conditioned": 0,
-        "demographic_conditioned": 0,
         "skipped_no_match": 0,
         "written": 0,
         "skipped_existing": 0,
@@ -325,7 +271,6 @@ def build_cases_conditioned_batch(
             batch=f"{batch_number}/{total_batches}",
             written=stats["written"],
             failed=stats["skipped_no_match"],
-            demo=stats["demographic_conditioned"],
         )
 
         try:
@@ -391,7 +336,6 @@ def build_cases_conditioned_batch(
             batch=f"{batch_number}/{total_batches}",
             written=stats["written"],
             failed=stats["skipped_no_match"],
-            demo=stats["demographic_conditioned"],
         )
 
     progress.close()

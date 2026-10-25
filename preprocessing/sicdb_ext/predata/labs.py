@@ -8,7 +8,7 @@ import logging
 
 import pandas as pd
 
-from references import load_references, ref_label, ref_unit
+from preprocessing.sicdb_ext.predata.references import load_references, ref_label, ref_unit
 
 log = logging.getLogger(__name__)
 

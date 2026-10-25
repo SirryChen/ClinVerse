@@ -1,1 +1,1 @@
-from .session import SimulationSession
+"""Clinical trajectory records and reference sessions."""

@@ -3,24 +3,28 @@ adapter's lab/radiology catalog (core.ports.DatasetAdapter) — dataset-agnostic
 by construction, since it never reads a catalog file or itemid scheme itself.
 
 When a requested test has no real result in the case, the fine-tuned
-lab-provider model (LoRA adapter on Qwen) is used to predict the value
-from the patient's full omniscient clinical context — matching the
-prompt format used during training (prepare_data.py). That model is
-MIMIC-trained today (train/provider/mimic-iv-ext/); for datasets without an
-equivalent trained adapter (e.g. sicdb-ext), simply omit adapter_path /
-model_path / lab_mapping_path and prediction degrades to "not performed".
+lab-provider model (LoRA adapter on Qwen) can predict the value from the
+patient's full omniscient clinical context — matching the prompt format used
+during training (prepare_data.py). Set ``clinlab_enabled=False`` for the
+missingness-control condition: source-record results are still returned, but
+missing results become an explicit "not performed" response without invoking
+the prediction model.
 """
 
 from __future__ import annotations
+from core.lab_prompt import _build_user_prompt, _is_missing, _fmt_flag, _fmt_ref_range, _truncate, SYSTEM_PROMPT as _SYSTEM_PROMPT
+from core.microbiology import is_abnormal as micro_abnormal, matches_specimen
 
 import logging
 import inspect
+import hashlib
 import math
 import re
 from pathlib import Path
 
 from core.json_catalog import LAB_NAME_ZH as _LAB_NAME_ZH
 from core.ports import DatasetAdapter
+from core.api_retry import call_with_retry
 
 from .base import BaseProvider
 
@@ -31,25 +35,14 @@ _FAILED_MODEL_KEYS: set[tuple[str, str | None, str | None]] = set()
 
 # ── Training-consistent constants ──────────────────────────────────────────────
 
-_SYSTEM_PROMPT = (
-    "You are a clinical laboratory assistant with complete access to a patient's medical record. "
-    "Given the patient's full clinical information and the specified laboratory test, "
-    "predict the final test result. "
-    "Respond with ONLY the numeric result (number only). Do not include units, labels, or explanations."
-)
 
 # Truncation limits matching config.yaml training settings
-_HPI_MAX_CHARS = 500
-_PE_MAX_CHARS = 2000
-_HC_MAX_CHARS = 6000
 
 _ABNORMAL_LABEL_ZH = {"high": "↑偏高", "low": "↓偏低", "abnormal": "↑异常", "delta": "↓偏低", "": ""}
 _NOT_PERFORMED_ZH = "本病例未执行此检查"
 _NOT_AVAILABLE_ZH = "本病例不支持此项检查"
 _NOT_RECOGNIZED_ZH = "检查项目无法识别"
 _NO_REPORT_ZH = "本病例无相关影像报告"
-_PREDICTED_TAG_ZH = "【AI预测】"
-_PREDICTED_TAG_EN = "[AI predicted]"
 _OUT_OF_SCOPE_HEADER_ZH = "超出本院检验科范围"
 _OUT_OF_SCOPE_HEADER_EN = "Out of catalog scope"
 _OUT_OF_SCOPE_IMAGING_HEADER_ZH = "超出本院影像科范围"
@@ -66,40 +59,12 @@ _THINK_BLOCK_RE = re.compile(r"(?is)<think>.*?</think>")
 
 # ── Prompt-building helpers (must match prepare_data.py exactly) ────────────────
 
-def _is_missing(val) -> bool:
-    if val is None:
-        return True
-    if isinstance(val, float) and math.isnan(val):
-        return True
-    return str(val).strip() in ("", "nan", "NaN", "NaT", "None")
 
 
-def _fmt_flag(flag_val) -> str:
-    if _is_missing(flag_val):
-        return ""
-    return f" [{str(flag_val).upper()}]"
 
 
-def _fmt_ref_range(lower, upper, unit: str = "") -> str:
-    suffix = f" {unit}" if unit else ""
-    has_lo = not _is_missing(lower)
-    has_hi = not _is_missing(upper)
-    if has_lo and has_hi:
-        return f"{lower} - {upper}{suffix}"
-    if has_lo:
-        return f">= {lower}{suffix}"
-    if has_hi:
-        return f"<= {upper}{suffix}"
-    return "Not available"
 
 
-def _truncate(text: str, max_chars: int) -> str:
-    if _is_missing(text):
-        return ""
-    text = str(text).strip()
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rsplit(" ", 1)[0] + " [...]"
 
 
 def _normalize(text: str) -> str:
@@ -137,7 +102,7 @@ def _resolve_eos_ids(tokenizer) -> list[int]:
 
 
 def _parse_model_output(text: str) -> str | None:
-    """Strip legacy tags and truncate hallucinated follow-up chat turns."""
+    """Strip tags and truncate hallucinated follow-up chat turns."""
     text = re.sub(r"\[ABNORMAL\]", "", text, flags=re.IGNORECASE).strip()
     text = _THINK_BLOCK_RE.sub("", text).strip()
     match = _ROLE_MARKER_RE.search(text)
@@ -149,137 +114,6 @@ def _parse_model_output(text: str) -> str | None:
 
 # ── Prompt builder (replicates prepare_data.py::_build_user_prompt) ────────────
 
-def _build_user_prompt(
-    demo: dict,
-    hpi: str,
-    pe: str,
-    diagnoses: list[dict],
-    medications: list[dict],
-    microbiology: list[dict],
-    hospital_course: str,
-    discharge_diagnosis: str,
-    context_labs: list[dict],
-    target_label: str,
-    target_category: str,
-    ref_range_lower,
-    ref_range_upper,
-    unit: str,
-) -> str:
-    lines: list[str] = []
-
-    # 1. Target (top)
-    lines.append("## Lab Test to Predict")
-    lines.append(f"Name: {target_label}")
-    if not _is_missing(target_category):
-        lines.append(f"Category: {target_category}")
-    lines.append(f"Reference range: {_fmt_ref_range(ref_range_lower, ref_range_upper, unit)}")
-    if unit:
-        lines.append(f"Unit: {unit}")
-    lines.append(
-        "Output requirement: respond with ONLY the final numeric test result "
-        "(number only; no unit, no extra text)."
-    )
-
-    # 2. Demographics
-    lines.append("\n## Patient Profile")
-    lines.append(
-        f"- Age: {demo.get('anchor_age', '?')} | "
-        f"Sex: {demo.get('gender', '?')} | "
-        f"Race: {demo.get('race', '?')}"
-    )
-    lines.append(
-        f"- Admission type: {demo.get('admission_type', '?')} | "
-        f"Insurance: {demo.get('insurance', '?')}"
-    )
-    adm_loc = demo.get("admission_location", "")
-    dis_loc = demo.get("discharge_location", "")
-    if not _is_missing(adm_loc):
-        lines.append(f"- Admitted from: {adm_loc}")
-    if not _is_missing(dis_loc):
-        lines.append(f"- Discharge destination: {dis_loc}")
-    if demo.get("hospital_expire_flag") == 1:
-        lines.append("- Hospital expiry: YES")
-
-    # 3. Discharge Diagnosis
-    dd_text = _truncate(discharge_diagnosis, 500)
-    if dd_text:
-        lines.append("\n## Discharge Diagnosis")
-        lines.append(dd_text)
-
-    # 4. ICD Diagnoses / Comorbidities
-    valid_dx = [d for d in diagnoses if not _is_missing(d.get("icd_diagnosis"))]
-    if valid_dx:
-        lines.append("\n## Diagnoses / Comorbidities")
-        for dx in valid_dx:
-            seq   = dx.get("seq_num", "")
-            title = dx["icd_diagnosis"]
-            code  = dx.get("icd_code", "")
-            ver   = dx.get("icd_version", "")
-            prefix = f"[#{seq}] " if not _is_missing(seq) else ""
-            suffix = f" (ICD-{ver}: {code})" if not _is_missing(code) else ""
-            lines.append(f"- {prefix}{title}{suffix}")
-
-    # 5. HPI
-    hpi_text = _truncate(hpi, _HPI_MAX_CHARS)
-    if hpi_text:
-        lines.append("\n## History of Present Illness")
-        lines.append(hpi_text)
-
-    # 6. Physical Examination
-    pe_text = _truncate(pe, _PE_MAX_CHARS)
-    if pe_text:
-        lines.append("\n## Physical Examination")
-        lines.append(pe_text)
-
-    # 7. Hospital Course
-    hc_text = _truncate(hospital_course, _HC_MAX_CHARS)
-    if hc_text:
-        lines.append("\n## Hospital Course")
-        lines.append(hc_text)
-
-    # 8. Medications
-    valid_meds = [m for m in medications if not _is_missing(m.get("drug"))]
-    if valid_meds:
-        lines.append("\n## Medications")
-        seen: set[str] = set()
-        for med in valid_meds:
-            drug     = med["drug"]
-            strength = med.get("prod_strength", "")
-            route    = med.get("route", "")
-            key = f"{drug}|{strength}|{route}"
-            if key in seen:
-                continue
-            seen.add(key)
-            parts = [drug]
-            if not _is_missing(strength):
-                parts.append(str(strength))
-            if not _is_missing(route):
-                parts.append(f"({route})")
-            lines.append("- " + " ".join(parts))
-
-    # 9. Microbiology
-    valid_micro = [m for m in microbiology if not _is_missing(m.get("valuestr"))]
-    if valid_micro:
-        lines.append("\n## Microbiology")
-        for mic in valid_micro:
-            test   = mic.get("test_name", "")
-            spec   = mic.get("spec_type_desc", "")
-            result = mic.get("valuestr", "")
-            abx    = mic.get("antibiogram", "")
-            label_str = f"{test} ({spec})" if not _is_missing(spec) else test
-            line = f"- {label_str}: {result}"
-            if not _is_missing(abx):
-                line += f" | Antibiogram: {abx}"
-            lines.append(line)
-
-    # 10. Available Laboratory Results (context; placed last)
-    if context_labs:
-        lines.append("\n## Available Laboratory Results")
-        for lab in context_labs:
-            flag = _fmt_flag(lab.get("flag"))
-            lines.append(f"- {lab['label']}: {lab['valuestr']}{flag}")
-
-    return "\n".join(lines)
 
 
 # ── LabProvider ────────────────────────────────────────────────────────────────
@@ -302,9 +136,17 @@ class LabProvider(BaseProvider):
         llm_client=None,
         llm_model: str | None = None,
         llm_extra_body: dict | None = None,
+        mask_ratio: float = 0.0,
+        mask_seed: int = 0,
+        clinlab_enabled: bool = True,
     ):
+        if not 0.0 <= mask_ratio <= 1.0:
+            raise ValueError("mask_ratio must be between 0 and 1")
         self._adapter = adapter
         self._language = language
+        self._mask_ratio = float(mask_ratio)
+        self._mask_seed = int(mask_seed)
+        self._clinlab_enabled = bool(clinlab_enabled)
 
         # Model prediction config (lazy-loaded)
         self._adapter_path = str(adapter_path) if adapter_path else None
@@ -315,10 +157,6 @@ class LabProvider(BaseProvider):
         self._tokenizer    = None
         self._local_generation_timeout = local_generation_timeout
 
-        # Chat-API fallback for missing-lab prediction, used when no local
-        # fine-tuned adapter is configured (e.g. our own trained model isn't
-        # deployed yet) — same prompt contract as the local model, just a
-        # different backend for _predict_lab().
         self._llm_client = llm_client
         self._llm_model = llm_model
         self._llm_extra_body = llm_extra_body or {}
@@ -326,7 +164,7 @@ class LabProvider(BaseProvider):
         # Lab mapping: itemid → training label / category (needed for prompt & context)
         self._id_map: dict[str, str] = {}
         self._item_category_map: dict[str, str] = {}
-        if lab_mapping_path and (self._adapter_path or self._model_path):
+        if self._clinlab_enabled and lab_mapping_path and (self._adapter_path or self._model_path):
             import pandas as pd
             mapping = pd.read_csv(lab_mapping_path, dtype={"itemid": str})
             self._id_map = dict(zip(mapping["itemid"].astype(str), mapping["label"]))
@@ -371,7 +209,21 @@ class LabProvider(BaseProvider):
         result_lines: list[str] = []
         returned_evidence_ids: list[str] = []
         returned_abnormal_ids: list[str] = []
-        predicted_by_key = self._predict_missing_labs_batch(resolved_items, labs_by_itemid, case)
+        masked_items = [
+            item for item in resolved_items
+            if item.get("source_table") != "microbiology"
+            and self._has_real_lab_result(item, labs_by_itemid)
+            and self._should_mask_real_lab(item, case)
+        ]
+        masked_keys = {self._item_prediction_key(item) for item in masked_items}
+        predicted_by_key = {}
+        if self._clinlab_enabled:
+            predicted_by_key = self._predict_missing_labs_batch(
+                resolved_items,
+                labs_by_itemid,
+                case,
+                force_predict_keys=masked_keys,
+            )
 
         for item in resolved_items:
             if item.get("source_table") == "microbiology":
@@ -381,6 +233,7 @@ class LabProvider(BaseProvider):
                     item,
                     labs_by_itemid,
                     predicted=self._predicted_value_for_item(item, predicted_by_key),
+                    mask_real=self._item_prediction_key(item) in masked_keys,
                 )
             result_lines.extend(lines)
             returned_evidence_ids.extend(eids)
@@ -409,6 +262,11 @@ class LabProvider(BaseProvider):
             "returned_evidence_ids": returned_evidence_ids,
             "returned_abnormal_evidence_ids": returned_abnormal_ids,
             "out_of_scope_tests": out_of_scope,
+            "clinlab_enabled": self._clinlab_enabled,
+            "predicted_test_keys": sorted(key for key, value in predicted_by_key.items() if value is not None),
+            "failed_prediction_keys": sorted(key for key, value in predicted_by_key.items() if value is None),
+            "lab_mask_ratio": self._mask_ratio,
+            "masked_test_keys": sorted(masked_keys),
         }
         return response, metadata
 
@@ -493,6 +351,7 @@ class LabProvider(BaseProvider):
         item: dict,
         labs_by_itemid: dict[str, list[dict]],
         predicted: str | None = None,
+        mask_real: bool = False,
     ) -> tuple[list[str], list[str], list[str]]:
         lines: list[str] = []
         eids: list[str] = []
@@ -504,28 +363,31 @@ class LabProvider(BaseProvider):
         else:
             name = en_name
 
-        for iid in item.get("itemids", []):
-            rows = labs_by_itemid.get(str(iid), [])
-            if rows:
-                row = rows[0]
-                flag = str(row.get("flag", ""))
-                if self._language == "zh":
-                    flag_str = "  ↑偏高" if "abnormal" in flag.lower() else ("  ↓偏低" if "delta" in flag.lower() else "")
-                else:
-                    flag_str = " ↑" if "abnormal" in flag.lower() else (" ↓" if "delta" in flag.lower() else "")
-                sep = "：" if self._language == "zh" else ": "
-                lines.append(f"{name}{sep}{row.get('valuestr', 'N/A')}{flag_str}")
-                eid = f"mimic_lab_{iid}"
-                eids.append(eid)
-                if flag_str:
-                    abns.append(eid)
-                return lines, eids, abns
+        if not mask_real:
+            for iid in item.get("itemids", []):
+                rows = labs_by_itemid.get(str(iid), [])
+                if rows:
+                    row = rows[0]
+                    flag = str(row.get("flag", ""))
+                    if self._language == "zh":
+                        flag_str = "  ↑偏高" if "abnormal" in flag.lower() else ("  ↓偏低" if "delta" in flag.lower() else "")
+                    else:
+                        flag_str = " ↑" if "abnormal" in flag.lower() else (" ↓" if "delta" in flag.lower() else "")
+                    sep = "：" if self._language == "zh" else ": "
+                    lines.append(f"{name}{sep}{row.get('valuestr', 'N/A')}{flag_str}")
+                    eid = f"mimic_lab_{iid}"
+                    eids.append(eid)
+                    if flag_str:
+                        abns.append(eid)
+                    return lines, eids, abns
 
         # No real result — use any precomputed model prediction
         sep = "：" if self._language == "zh" else ": "
         if predicted is not None:
-            tag = _PREDICTED_TAG_ZH if self._language == "zh" else _PREDICTED_TAG_EN
-            lines.append(f"{name}{sep}{predicted} {tag}")
+            # Predictions must be indistinguishable from recorded values in
+            # the doctor-visible response.  Their provenance remains
+            # available only in hidden metadata (masked_test_keys).
+            lines.append(f"{name}{sep}{predicted}")
         else:
             if self._language == "zh":
                 lines.append(f"{name}：{_NOT_PERFORMED_ZH}")
@@ -543,33 +405,21 @@ class LabProvider(BaseProvider):
         lines: list[str] = []
         eids: list[str] = []
 
-        type_kw = test_type.replace("_culture", "").replace("_", " ")
-        matching = (
-            [m for m in micro_list if type_kw in (m.get("spec_type_desc", "") + m.get("test_name", "")).lower()]
-            or micro_list
-        )
-
-        if not matching:
-            if self._language == "zh":
-                lines.append(f"[{test_type}：暂无微生物检测结果]")
-            else:
-                lines.append(f"[{test_type}: no result available]")
-            return lines, eids, []
-
-        for i, m in enumerate(matching[:3]):
-            if self._language == "zh":
-                lines.append(
-                    f"微生物检测（{m.get('spec_type_desc', test_type)}）："
-                    f"{m.get('test_name', '')} — {m.get('valuestr', '无菌生长')}"
-                )
-            else:
-                lines.append(
-                    f"Microbiology ({m.get('spec_type_desc', test_type)}): "
-                    f"{m.get('test_name', '')} — {m.get('valuestr', 'No growth')}"
-                )
-            eids.append(f"mimic_micro_{i}")
-
-        return lines, eids, []
+        abnormal_ids = []
+        for i, record in enumerate(micro_list):
+            if not matches_specimen(record, test_type):
+                continue
+            result = record.get("valuestr")
+            if not result:
+                raise ValueError("Microbiology records require a result")
+            eid = f"mimic_micro_{i}"
+            lines.append(f"Microbiology ({record.get('spec_type_desc', test_type)}): {record.get('test_name', '')} — {result}")
+            eids.append(eid)
+            if micro_abnormal(record):
+                abnormal_ids.append(eid)
+        if not lines:
+            lines.append(f"[{test_type}: no result available]")
+        return lines, eids, abnormal_ids
 
     # ── Model prediction internals ──────────────────────────────────────────────
 
@@ -679,6 +529,18 @@ class LabProvider(BaseProvider):
     def _has_real_lab_result(self, item: dict, labs_by_itemid: dict[str, list[dict]]) -> bool:
         return any(labs_by_itemid.get(str(iid), []) for iid in item.get("itemids", []))
 
+    def _should_mask_real_lab(self, item: dict, case: dict) -> bool:
+        """Make an episode-stable Bernoulli choice for each case/lab pair."""
+        if self._mask_ratio <= 0.0:
+            return False
+        if self._mask_ratio >= 1.0:
+            return True
+        case_id = str(case.get("case_id", ""))
+        item_key = self._item_prediction_key(item)
+        payload = f"{self._mask_seed}:{case_id}:{item_key}".encode("utf-8")
+        sample = int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") / 2**64
+        return sample < self._mask_ratio
+
     def _build_prediction_messages(
         self,
         item: dict,
@@ -702,7 +564,14 @@ class LabProvider(BaseProvider):
         if not target_label:
             return None
 
-        context_labs = self._build_context_labs(labs_by_itemid)
+        # A masked target must not appear in its own ClinLab prompt.  This is
+        # essential because, unlike a naturally missing test, its ground-truth
+        # row is present in labs_by_itemid.
+        target_itemids = {str(iid) for iid in item.get("itemids", [])}
+        context_labs = self._build_context_labs({
+            iid: rows for iid, rows in labs_by_itemid.items()
+            if str(iid) not in target_itemids
+        })
         user_prompt = _build_user_prompt(
             demo=demo,
             hpi=hpi,
@@ -729,15 +598,21 @@ class LabProvider(BaseProvider):
         items: list[dict],
         labs_by_itemid: dict[str, list[dict]],
         case: dict,
+        force_predict_keys: set[str] | None = None,
     ) -> dict[str, str | None]:
-        missing_items = [
+        force_predict_keys = force_predict_keys or set()
+        prediction_items = [
             item for item in items
-            if item.get("source_table") != "microbiology" and not self._has_real_lab_result(item, labs_by_itemid)
+            if item.get("source_table") != "microbiology"
+            and (
+                not self._has_real_lab_result(item, labs_by_itemid)
+                or self._item_prediction_key(item) in force_predict_keys
+            )
         ]
-        if not missing_items:
+        if not prediction_items:
             return {}
 
-        local_model_configured = bool(self._model_path and self._adapter_path)
+        local_model_configured = bool(self._model_path)
         local_model_loaded = self._ensure_model_loaded() if local_model_configured else False
         if local_model_configured and not local_model_loaded:
             raise RuntimeError(
@@ -746,13 +621,13 @@ class LabProvider(BaseProvider):
             )
         use_local_model = bool(self._id_map) and local_model_loaded
         if not use_local_model and self._llm_client is None:
-            return {}
+            raise RuntimeError("Configure a ClinLab model, mapping and endpoint")
 
         prompts: list[tuple[str, str, list[dict]]] = []
-        for item in missing_items:
+        for item in prediction_items:
             built = self._build_prediction_messages(item, labs_by_itemid, case)
             if built is None:
-                continue
+                raise ValueError("Requested test lacks ClinLab target metadata")
             target_label, messages = built
             prompts.append((self._item_prediction_key(item), target_label, messages))
         if not prompts:
@@ -760,105 +635,11 @@ class LabProvider(BaseProvider):
 
         if use_local_model:
             predictions = self._run_model_inference_batch([messages for _, _, messages in prompts])
-            failed_labels = [
-                target_label
-                for (_, target_label, _), prediction in zip(prompts, predictions)
-                if prediction is None
-            ]
-            if failed_labels:
-                raise RuntimeError(
-                    "Batch lab prediction returned empty output for: "
-                    + ", ".join(failed_labels)
-                )
-            return {
-                key: prediction
-                for (key, _, _), prediction in zip(prompts, predictions)
-            }
-
-        predictions: dict[str, str | None] = {}
-        for key, target_label, messages in prompts:
-            try:
-                predictions[key] = self._run_llm_inference(messages)
-            except Exception as e:
-                raise RuntimeError(f"Lab prediction inference failed for {target_label}: {e}") from e
-            if predictions[key] is None:
-                raise RuntimeError(f"Lab prediction returned empty output for {target_label}")
-        return predictions
-
-    def _predict_lab(
-        self,
-        item: dict,
-        labs_by_itemid: dict[str, list[dict]],
-        case: dict,
-    ) -> str | None:
-        """Build an omniscient prompt and run the fine-tuned model (or, when no
-        local adapter is configured, the chat-API fallback) to predict the
-        result."""
-        local_model_configured = bool(self._model_path and self._adapter_path)
-        local_model_loaded = self._ensure_model_loaded() if local_model_configured else False
-        if local_model_configured and not local_model_loaded:
-            raise RuntimeError(
-                "Local lab prediction model failed to load; refusing to fall back "
-                "to missing results. Fix the configured model/adapter or GPU allocation."
-            )
-        use_local_model = bool(self._id_map) and local_model_loaded
-        if not use_local_model and self._llm_client is None:
-            return None
-
-        # ── Gather patient context from the case (omniscient view) ──
-        core = case.get("core_admission", {})
-        moderator = case.get("simulation_views", {}).get("moderator_view", {})
-
-        demo        = core.get("demographics", {})
-        hpi         = core.get("hpi", "")
-        pe          = core.get("physical_exam", "")
-        medications = core.get("medications", [])
-        microbiology = case.get("simulation_views", {}).get("lab_provider_view", {}).get("microbiology", [])
-        hospital_course     = moderator.get("hospital_course", "")
-        discharge_diagnosis = moderator.get("discharge_diagnosis", "")
-        icd_diagnoses       = moderator.get("icd_diagnoses", [])
-
-        # ── Target lab metadata ──
-        target_label, target_category = self._get_target_label_and_category(item)
-        if not target_label:
-            return None
-
-        # ref_range and unit are unavailable for missing tests → left empty
-        context_labs = self._build_context_labs(labs_by_itemid)
-
-        user_prompt = _build_user_prompt(
-            demo=demo,
-            hpi=hpi,
-            pe=pe,
-            diagnoses=icd_diagnoses,
-            medications=medications,
-            microbiology=microbiology,
-            hospital_course=hospital_course,
-            discharge_diagnosis=discharge_diagnosis,
-            context_labs=context_labs,
-            target_label=target_label,
-            target_category=target_category,
-            ref_range_lower=None,
-            ref_range_upper=None,
-            unit="",
-        )
-
-        messages = [
-            {"role": "system",  "content": _SYSTEM_PROMPT},
-            {"role": "user",    "content": user_prompt},
-        ]
-
-        try:
-            if use_local_model:
-                return self._run_model_inference(messages)
-            return self._run_llm_inference(messages)
-        except Exception as e:
-            log.warning("Lab prediction inference failed for %s: %s", target_label, e)
-            return None
-
-    def _run_model_inference(self, messages: list[dict]) -> str | None:
-        """Run model inference and return the predicted value string."""
-        return self._run_model_inference_batch([messages])[0]
+        else:
+            predictions = [self._run_llm_inference(messages) for _, _, messages in prompts]
+        if len(predictions) != len(prompts) or any(value is None for value in predictions):
+            raise RuntimeError("ClinLab must return a result for each requested prediction")
+        return {key: value for (key, _, _), value in zip(prompts, predictions)}
 
     def _run_model_inference_batch(self, messages_batch: list[list[dict]]) -> list[str | None]:
         """Run a batch of local model inferences and return one prediction per prompt."""
@@ -916,9 +697,9 @@ class LabProvider(BaseProvider):
         return predictions
 
     def _run_llm_inference(self, messages: list[dict]) -> str | None:
-        """Chat-API fallback for missing-lab prediction (no local adapter
-        configured) — same prompt contract as _run_model_inference()."""
-        completion = self._llm_client.chat.completions.create(
+        """Request a prediction from the configured ClinLab endpoint."""
+        completion = call_with_retry(
+            self._llm_client.chat.completions.create,
             model=self._llm_model,
             messages=messages,
             temperature=0,

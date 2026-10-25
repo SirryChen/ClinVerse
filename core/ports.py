@@ -79,11 +79,4 @@ class DatasetAdapter(Protocol):
         ...
 
     def extract_condition_priors(self, admission: Admission) -> dict[str, bool]:
-        """Return {mimic_force_X: True, ...} comorbidity flags to inject into
-        Synthea generation (see synthea_extensions/modules/*.json for the
-        attribute names these trigger). Each dataset derives this from
-        whatever comorbidity signal it actually has — coded secondary ICD
-        diagnoses for MIMIC, boolean precondition fields for SICdb, etc.
-        Returning {} is valid (means: no comorbidity priors available; the
-        conditioned-generation pipeline falls back to Tier 2 demographic-only).
-        """
+        """Return {mimic_force_X: True, ...} comorbidity flags to inject into"""

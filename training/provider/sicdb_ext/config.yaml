@@ -1,28 +1,26 @@
 model:
-  name_or_path: ../../../weight/Qwen3.5-2B
+  name_or_path: weights/Qwen3.5-2B
   max_length: 4096
   torch_dtype: bfloat16
   trust_remote_code: true
   enable_thinking: false
 
 data:
-  # The generic provider data builder keeps this legacy key name, but it
-  # points to SICdb-Ext data for this configuration.
-  mimic_data_dir: ../../../dataset/sicdb-ext
-  lab_mapping_path: ../../../dataset/sicdb-ext/lab_test_mapping.csv
-  demographics_path: ../../../dataset/sicdb-ext/patient_demographics.csv
-  hpi_path: ../../../dataset/sicdb-ext/history_of_present_illness.csv
-  pe_path: ../../../dataset/sicdb-ext/physical_examination.csv
-  labs_path: ../../../dataset/sicdb-ext/laboratory_tests.csv
-  microbiology_path: ../../../dataset/sicdb-ext/microbiology.csv
-  medications_path: ../../../dataset/sicdb-ext/discharge_medications.csv
-  icd_diagnosis_path: ../../../dataset/sicdb-ext/icd_diagnosis.csv
-  hospital_course_path: ../../../dataset/sicdb-ext/hospital_course.csv
-  discharge_diagnosis_path: ../../../dataset/sicdb-ext/discharge_diagnosis.csv
-  output_dir: ./output
-  train_file: ./output/train.jsonl
-  test_file: ./output/test.jsonl
-  tokenize_cache_dir: ./output/tokenize_cache
+  mimic_data_dir: data/normalized/sicdb-ext
+  lab_mapping_path: data/normalized/sicdb-ext/lab_test_mapping.csv
+  demographics_path: data/normalized/sicdb-ext/patient_demographics.csv
+  hpi_path: data/normalized/sicdb-ext/history_of_present_illness.csv
+  pe_path: data/normalized/sicdb-ext/physical_examination.csv
+  labs_path: data/normalized/sicdb-ext/laboratory_tests.csv
+  microbiology_path: data/normalized/sicdb-ext/microbiology.csv
+  medications_path: data/normalized/sicdb-ext/discharge_medications.csv
+  icd_diagnosis_path: data/normalized/sicdb-ext/icd_diagnosis.csv
+  hospital_course_path: data/normalized/sicdb-ext/hospital_course.csv
+  discharge_diagnosis_path: data/normalized/sicdb-ext/discharge_diagnosis.csv
+  output_dir: outputs/clinlab_sicdb
+  train_file: outputs/clinlab_sicdb/train.jsonl
+  test_file: outputs/clinlab_sicdb/test.jsonl
+  tokenize_cache_dir: outputs/clinlab_sicdb/tokenize_cache
   pretokenize_num_proc: 8
 
   min_context_labs: 2
@@ -35,7 +33,7 @@ data:
   seed: 2026
 
 training:
-  output_dir: ./output/checkpoints
+  output_dir: outputs/clinlab_sicdb/checkpoints
   train_sampling_strategy: random
   num_train_epochs: 1
   per_device_train_batch_size: 2

@@ -257,8 +257,6 @@ def main() -> None:
     parser.add_argument("--eval-results-root", type=Path, default=DEFAULT_EVAL_ROOT)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_INPUT_DIR)
     args = parser.parse_args()
-    # Default to the current random-sampling experiment outputs. This avoids
-    # mixing legacy single-checkpoint and earlier filtered-result JSONL files.
     inputs = args.input or sorted(args.input_dir.glob("*_random_carryforward.jsonl"))
     if not inputs:
         raise FileNotFoundError("No probe JSONL files found. Pass --input or check --input-dir.")

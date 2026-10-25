@@ -9,7 +9,7 @@ import logging
 import os
 from typing import Any
 
-from config import (
+from preprocessing.sicdb_ext.predata.config import (
     BASE_OUT,
     OUT_HPI, OUT_PE, OUT_DISCHARGE_DX, OUT_DISCHARGE_PR,
     OUT_LABS, OUT_MICRO,

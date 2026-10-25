@@ -10,8 +10,8 @@ from typing import Any
 
 import pandas as pd
 
-from config import PE_HOURS_AFTER_ICU, SEX_FEMALE_REF, SEX_MALE_REF
-from references import load_references, ref_label, ref_unit, ref_value
+from preprocessing.sicdb_ext.predata.config import PE_HOURS_AFTER_ICU, SEX_FEMALE_REF, SEX_MALE_REF
+from preprocessing.sicdb_ext.predata.references import load_references, ref_label, ref_unit, ref_value
 
 
 def _dedupe(items: list[str]) -> list[str]:

@@ -1,17 +1,4 @@
-"""Canonical Admission schema, shared by every dataset adapter.
-
-Deliberately TypedDicts, not dataclasses: every existing consumer
-(pipeline/case_builder.py, pipeline/matcher.py, pipeline/trimmer.py,
-pipeline/feature_extractor.py, pipeline/evidence_builder.py,
-pipeline/view_builder.py) was written against the dict shape that
-pipeline/mimic_loader.py._build_admission() already produced — formalizing
-that shape as a dict-compatible type lets every adapter slot into the
-existing pipeline with zero changes to those files, instead of forcing a
-attribute-access rewrite across eight call sites for no behavioural benefit.
-
-An adapter's load_admission()/load_admissions() must return dicts matching
-Admission below. Use admission_from_parts() to assemble one correctly.
-"""
+"""Canonical admission schema."""
 from __future__ import annotations
 
 from typing import Optional, TypedDict

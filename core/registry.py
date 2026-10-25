@@ -30,14 +30,7 @@ def register(name: str, factory: Callable[..., DatasetAdapter]) -> None:
 
 
 def get_adapter(name: str, **construct_kwargs) -> DatasetAdapter:
-    """Return the (cached) adapter instance for `name`.
-
-    The first caller's construct_kwargs win — within one process every
-    consumer (LabProvider, GPTDoctorAgent, Moderator, the case-building
-    scripts) is expected to share the same adapter instance for a given
-    dataset, the same way the pre-refactor code shared one catalog dict for
-    an entire batch run.
-    """
+    """Return the (cached) adapter instance for `name`."""
     if name not in _INSTANCES:
         if name not in _FACTORIES:
             _ensure_builtin_adapters_imported()

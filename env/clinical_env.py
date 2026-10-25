@@ -28,7 +28,8 @@ from providers.lab_provider import LabProvider
 from providers.moderator import Moderator
 from simulation.transcript import Transcript
 from evaluation.scorer import score_transcript
-from pipeline.patient_info_units import build_patient_information_units_from_case
+from pipeline.patient_info_units import require_patient_information_units
+from core.presentation import visible_from_case, initial_presentation
 
 if TYPE_CHECKING:
     from core.ports import DatasetAdapter
@@ -61,36 +62,19 @@ def _load_case(path: str | Path) -> dict:
         return json.load(f)
 
 
-def _extract_chief_complaint(hpi: str) -> str:
-    if not hpi:
-        return ""
-    for sep in (".", "\n"):
-        idx = hpi.find(sep)
-        if 10 < idx < 250:
-            return hpi[: idx + 1].strip()
-    return hpi[:200].strip()
-
-
 def _build_initial_visible(case: dict) -> dict:
-    view = case["simulation_views"]["patient_actor_view"]
-    init = view.get("initial_presentation", {})
-    return {
-        "age": init.get("age"),
-        "gender": init.get("gender"),
-        "admission_type": init.get("admission_type"),
-        "vital_signs": init.get("vital_signs"),
-        "chief_complaint": _extract_chief_complaint(view.get("symptom_context", "")),
-    }
+    return visible_from_case(case)
 
 
 def _ensure_patient_information_units(case: dict) -> None:
-    if case.get("patient_information_units"):
-        return
-    units = build_patient_information_units_from_case(case)
-    case["patient_information_units"] = units
-    views = case.setdefault("simulation_views", {})
-    patient_view = views.setdefault("patient_actor_view", {})
-    patient_view["patient_information_units"] = units
+    units = require_patient_information_units(case)
+    patient = case.get("simulation_views", {}).get("patient_actor_view", {})
+    core = case["core_admission"]
+    expected = initial_presentation(units, core["demographics"], core.get("vital_signs", ""))
+    if patient.get("initial_presentation") != expected:
+        raise ValueError("Initial presentation and information units must agree")
+    if patient.get("patient_information_units") != units:
+        raise ValueError("Case information units and patient view must agree")
 
 
 class ClinicalEnv:
@@ -102,17 +86,21 @@ class ClinicalEnv:
         lab_openai_config: dict | None = None,
         language: str = "en",
         max_turns: int = 20,
+        lab_mask_ratio: float = 0.0,
+        lab_mask_seed: int = 0,
+        clinlab_enabled: bool = True,
     ):
+        _ensure_patient_information_units(case)
         patient_client = OpenAI(
             api_key=patient_openai_config["api_key"],
             base_url=patient_openai_config["base_url"],
             timeout=_timeout_from_config(patient_openai_config),
         )
         lab_cfg = lab_openai_config or patient_openai_config
-        use_local_lab_model = bool(lab_cfg.get("model_path") and lab_cfg.get("adapter_path"))
+        use_local_lab_model = clinlab_enabled and bool(lab_cfg.get("model_path"))
         lab_client = None
         lab_model = None
-        if not use_local_lab_model:
+        if clinlab_enabled and not use_local_lab_model:
             lab_client = patient_client if lab_cfg is patient_openai_config else OpenAI(
                 api_key=lab_cfg["api_key"],
                 base_url=lab_cfg["base_url"],
@@ -135,14 +123,12 @@ class ClinicalEnv:
             extra_body=patient_openai_config.get("extra_body"),
         )
         self._exam_provider = ExamProvider(language=language)
-        # No local fine-tuned adapter wired in yet — fall back to the same
-        # chat API used by the patient simulator for missing-lab prediction.
         self._lab_provider = LabProvider(
             adapter,
             language=language,
-            adapter_path=lab_cfg.get("adapter_path"),
-            model_path=lab_cfg.get("model_path"),
-            lab_mapping_path=lab_cfg.get("lab_mapping_path"),
+            adapter_path=lab_cfg.get("adapter_path") if clinlab_enabled else None,
+            model_path=lab_cfg.get("model_path") if clinlab_enabled else None,
+            lab_mapping_path=lab_cfg.get("lab_mapping_path") if clinlab_enabled else None,
             local_device=lab_cfg.get("local_device"),
             local_batch_size=lab_cfg.get("local_batch_size", 4),
             local_generation_timeout=lab_cfg.get(
@@ -152,6 +138,9 @@ class ClinicalEnv:
             llm_client=lab_client,
             llm_model=lab_model,
             llm_extra_body=lab_cfg.get("extra_body"),
+            mask_ratio=lab_mask_ratio,
+            mask_seed=lab_mask_seed,
+            clinlab_enabled=clinlab_enabled,
         )
         self._moderator = Moderator(
             case, self._patient_actor, self._exam_provider, self._lab_provider, max_turns
@@ -161,6 +150,7 @@ class ClinicalEnv:
         self._done = False
 
     def reset(self) -> Observation:
+        self._moderator.reset()
         self._transcript = Transcript(
             case_id=self.case["case_id"],
             initial_visible_info=_build_initial_visible(self.case),
@@ -232,6 +222,9 @@ class ClinicalEnv:
         datasets_config: dict[str, dict] | None = None,
         max_turns: int = 20,
         language: str = "en",
+        lab_mask_ratio: float = 0.0,
+        lab_mask_seed: int = 0,
+        clinlab_enabled: bool = True,
     ) -> "ClinicalEnv":
         """Load a case and pick the right DatasetAdapter for it automatically,
         based on case["core_admission"]["source"] (set by pipeline.case_builder
@@ -244,10 +237,6 @@ class ClinicalEnv:
         case = _load_case(case_path)
         _ensure_patient_information_units(case)
         source = case.get("core_admission", {}).get("source", "mimic-iv-ext")
-        # Legacy pre-adapter cases recorded source as "mimic-iv"; the registry
-        # only knows the current adapter name. Mirrors viewer's normalizeSource().
-        if source == "mimic-iv":
-            source = "mimic-iv-ext"
         adapter_kwargs = (datasets_config or {}).get(source, {})
         adapter = get_adapter(source, **adapter_kwargs)
         return cls(
@@ -257,4 +246,7 @@ class ClinicalEnv:
             lab_openai_config=lab_openai_config,
             language=language,
             max_turns=max_turns,
+            lab_mask_ratio=lab_mask_ratio,
+            lab_mask_seed=lab_mask_seed,
+            clinlab_enabled=clinlab_enabled,
         )

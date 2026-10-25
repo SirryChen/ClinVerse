@@ -18,18 +18,35 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.config import load_yaml_config
+from core import icd as icd_mod
 from core.registry import get_adapter
 from env.task_stream import TaskStream
 from evaluation.metrics import diagnosis_category_accuracy, diagnosis_subtype_accuracy
 
 
-def system_prompt(evidence_mode: str) -> str:
+DIAGNOSIS_TASKS = ("primary-diagnosis", "subtype-given-category")
+
+
+def system_prompt(evidence_mode: str, diagnosis_task: str = "primary-diagnosis") -> str:
     evidence_description = (
         "complete clinical evidence from a finished workup"
         if evidence_mode == "full-workup"
         else "only the patient's initial information: demographics, history, physical examination, "
         "vital signs, and recorded admission medications; no laboratory, microbiology, or imaging results"
     )
+    if diagnosis_task == "subtype-given-category":
+        return f"""You are performing constrained ICD-10-CM classification. You receive {evidence_description},
+plus the known ICD-10-CM block of the patient's primary diagnosis.
+
+The supplied block is authoritative and is a hard constraint. Your task is not to reconsider or
+predict the block. You must select exactly one three-character ICD-10-CM category contained within
+the supplied block. Even if the clinical evidence appears to favor a diagnosis outside that block,
+choose the most plausible category inside the supplied block. Before answering, silently verify
+that your three-character category falls within the stated block range. Never output the block
+range itself or any category outside it.
+
+Return JSON only, with no explanation or additional codes:
+{{"icd10_code": "<one three-character ICD-10-CM category within the supplied block>"}}."""
     return f"""You are a clinical diagnostician. You receive {evidence_description},
 but no final diagnosis, discharge diagnosis, billing codes, or outcome labels.
 Infer the single most likely primary diagnosis.
@@ -93,7 +110,12 @@ def render_radiology(rows: list[dict]) -> str:
     return "\n".join(lines) or "- No imaging results recorded."
 
 
-def build_prompt(case: dict, adapter, evidence_mode: str = "full-workup") -> str:
+def build_prompt(
+    case: dict,
+    adapter,
+    evidence_mode: str = "full-workup",
+    diagnosis_category: str | None = None,
+) -> str:
     """Render allowlisted core evidence only; never read moderator_view."""
     core = case.get("core_admission", {})
     demographics = core.get("demographics", {})
@@ -123,6 +145,14 @@ def build_prompt(case: dict, adapter, evidence_mode: str = "full-workup") -> str
             "## Microbiology results\n" + render_microbiology(core.get("microbiology", [])),
             "## Imaging results\n" + render_radiology(core.get("radiology", [])),
         ])
+    if diagnosis_category:
+        sections.append(
+            "## Authoritative primary-diagnosis block (hard constraint)\n"
+            f"- Allowed ICD-10-CM block: {diagnosis_category}\n"
+            "- Output exactly one three-character ICD-10-CM category inside this block.\n"
+            "- Do not output a category outside this range, even if other clinical evidence suggests one.\n"
+            "- Silently check that the answer is inside the allowed block before returning the JSON."
+        )
     return "\n\n".join(sections)
 
 
@@ -153,6 +183,12 @@ def main() -> None:
         "--evidence-mode", choices=("full-workup", "basic-info"), default="full-workup",
         help="full-workup includes test results; basic-info includes only initial patient information.",
     )
+    parser.add_argument(
+        "--diagnosis-task",
+        choices=DIAGNOSIS_TASKS,
+        default="primary-diagnosis",
+        help="subtype-given-category reveals the ground-truth ICD block and evaluates the predicted three-character subtype.",
+    )
     parser.add_argument("--shuffle", action="store_true")
     parser.add_argument("--sample-seed", type=int, default=None)
     parser.add_argument("--run-id", required=True)
@@ -180,27 +216,50 @@ def main() -> None:
     pending = [ref for ref in refs if ref.case_id not in completed_ids and (args.retry_failed or ref.case_id not in failed_ids)]
 
     with predictions_path.open("a" if args.resume else "w", encoding="utf-8") as prediction_file, errors_path.open("a" if args.resume else "w", encoding="utf-8") as error_file:
-        with tqdm(total=max(args.n - len(predictions), 0), desc="full-info diagnosis", unit="case") as progress:
+        with tqdm(total=max(args.n - len(predictions), 0), desc=args.diagnosis_task, unit="case") as progress:
             for ref in pending:
                 if len(predictions) >= args.n:
                     break
                 try:
                     case = json.loads(ref.path.read_text(encoding="utf-8"))
+                    ground_truth = case["simulation_views"]["moderator_view"]["ground_truth"].get("icd10_code", "")
+                    category_hint = (
+                        icd_mod.block(ground_truth)
+                        if args.diagnosis_task == "subtype-given-category"
+                        else None
+                    )
+                    if args.diagnosis_task == "subtype-given-category" and not category_hint:
+                        raise ValueError(f"Cannot derive an ICD-10 block from ground truth {ground_truth!r}.")
                     response = client.chat.completions.create(
                         model=provider["doctor_model"],
                         messages=[
-                            {"role": "system", "content": system_prompt(args.evidence_mode)},
-                            {"role": "user", "content": build_prompt(case, adapter, args.evidence_mode)},
+                            {"role": "system", "content": system_prompt(args.evidence_mode, args.diagnosis_task)},
+                            {
+                                "role": "user",
+                                "content": build_prompt(
+                                    case,
+                                    adapter,
+                                    args.evidence_mode,
+                                    diagnosis_category=category_hint,
+                                ),
+                            },
                         ],
                         temperature=0,
                         max_tokens=128,
                         extra_body=provider.get("extra_body"),
                     )
                     predicted = parse_icd10(response.choices[0].message.content)
-                    ground_truth = case["simulation_views"]["moderator_view"]["ground_truth"].get("icd10_code", "")
                     category = diagnosis_category_accuracy(predicted, ground_truth)
                     subtype = diagnosis_subtype_accuracy(predicted, ground_truth) if category else 0
-                    row = {"case_id": ref.case_id, "predicted_icd10": predicted, "ground_truth_icd10": ground_truth, "diagnosis_category_accuracy": category, "diagnosis_subtype_accuracy": subtype}
+                    row = {
+                        "case_id": ref.case_id,
+                        "diagnosis_task": args.diagnosis_task,
+                        "diagnosis_category_hint": category_hint,
+                        "predicted_icd10": predicted,
+                        "ground_truth_icd10": ground_truth,
+                        "diagnosis_category_accuracy": category,
+                        "diagnosis_subtype_accuracy": subtype,
+                    }
                     prediction_file.write(json.dumps(row, ensure_ascii=False) + "\n")
                     prediction_file.flush()
                     predictions.append(row)
@@ -222,7 +281,30 @@ def main() -> None:
         if args.evidence_mode == "full-workup"
         else "demographics, HPI, physical examination/vital signs, and admission medications only; all laboratory, microbiology, and imaging results are excluded"
     )
-    summary = {"n": len(predictions), "provider": args.provider, "source": args.source, "evidence_mode": args.evidence_mode, "metrics": {key: metric(key) for key in ("diagnosis_category_accuracy", "diagnosis_subtype_accuracy")}, "n_errors": len(errors), "leakage_policy": f"Prompt allowlists core_admission {included_evidence}. It excludes all moderator views, ground truth, discharge diagnosis, hospital course, billing ICDs, outcome fields, discharge location, and discharge medications."}
+    label_policy = (
+        "The prompt additionally reveals only the ground-truth-derived ICD-10 block as the "
+        "known primary-diagnosis category; it does not reveal the three-character category or full code."
+        if args.diagnosis_task == "subtype-given-category"
+        else "The prompt does not reveal any ground-truth diagnosis label."
+    )
+    summary = {
+        "n": len(predictions),
+        "provider": args.provider,
+        "source": args.source,
+        "evidence_mode": args.evidence_mode,
+        "diagnosis_task": args.diagnosis_task,
+        "primary_metric": "diagnosis_subtype_accuracy" if args.diagnosis_task == "subtype-given-category" else None,
+        "metrics": {
+            key: metric(key)
+            for key in ("diagnosis_category_accuracy", "diagnosis_subtype_accuracy")
+        },
+        "n_errors": len(errors),
+        "leakage_policy": (
+            f"Prompt allowlists core_admission {included_evidence}. {label_policy} "
+            "It excludes discharge diagnosis, hospital course, billing ICDs, outcome fields, "
+            "discharge location, and discharge medications."
+        ),
+    }
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

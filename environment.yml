@@ -1,0 +1,10 @@
+name: clinverse
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - openjdk=17
+  - pip
+  - git
+  - pip:
+      - -e .[dev]

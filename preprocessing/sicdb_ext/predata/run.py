@@ -12,6 +12,10 @@ Usage:
     python preprocessing/sicdb_ext/predata/run.py [--limit N] [--min-pe-length 40]
 """
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 
 import argparse
 import json
@@ -27,15 +31,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-import clinical   # noqa: E402
-import config     # noqa: E402
-import export     # noqa: E402
-import labs       # noqa: E402
-import loader     # noqa: E402
-import references # noqa: E402
-import sanitize   # noqa: E402
+from preprocessing.sicdb_ext.predata import clinical
+from preprocessing.sicdb_ext.predata import config
+from preprocessing.sicdb_ext.predata import export
+from preprocessing.sicdb_ext.predata import labs
+from preprocessing.sicdb_ext.predata import loader
+from preprocessing.sicdb_ext.predata import references
+from preprocessing.sicdb_ext.predata import sanitize
 
-from config import (  # noqa: E402
+from preprocessing.sicdb_ext.predata.config import (  # noqa: E402
     OUT_HPI, OUT_PE, OUT_DISCHARGE_DX, OUT_DISCHARGE_PR,
     OUT_LABS, OUT_MICRO, OUT_ICD_DX, OUT_ICD_PROC, OUT_LAB_MAPPING,
     OUT_DEMOGRAPHICS, OUT_MEDICATIONS, OUT_HOSP_COURSE, OUT_COMORBIDITY,

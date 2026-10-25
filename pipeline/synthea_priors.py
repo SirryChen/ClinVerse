@@ -1,14 +1,4 @@
-"""Dataset-agnostic half of Synthea conditioning priors.
-
-Splits what used to be pipeline/mimic_prior_extractor.py into:
-  - hard demographic priors + forbidden clues: generic, live here (they only
-    read admission["demographics"] / admission["primary_diagnosis"], which
-    every adapter populates identically via core.schema.admission_from_parts)
-  - comorbidity condition flags: genuinely dataset-specific (MIMIC has coded
-    secondary ICD diagnoses; SICdb has boolean precondition fields instead),
-    so that part is adapter.extract_condition_priors() — see
-    adapters/mimic_iv_ext/condition_priors.py and adapters/sicdb_ext/condition_priors.py.
-"""
+"""Demographic and condition priors for patient generation."""
 from __future__ import annotations
 
 from typing import Any

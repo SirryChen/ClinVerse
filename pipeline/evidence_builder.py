@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from core.json_catalog import LAB_NAME_ZH
+from core.microbiology import is_abnormal as micro_abnormal
 
 
 def _slug(text: str) -> str:
@@ -94,6 +95,7 @@ def build_evidence_inventory(admission: dict, trimmed_persona: dict, adapter=Non
             "evidence_id": f"mimic_micro_{i}",
             "source": "mimic", "type": "microbiology",
             "content": f"{micro.get('test_name','')} {micro.get('spec_type_desc','')} {micro.get('valuestr','')}",
+            "is_abnormal": micro_abnormal(micro),
             "initially_visible": False, "collected": False,
         })
 

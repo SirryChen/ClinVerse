@@ -1,19 +1,4 @@
-"""
-LoRA SFT training for MIMIC-IV-Ext lab result prediction.
-
-Supports two modes based on config.bnb.load_in_4bit:
-  - false (default for 100GB+ VRAM): load model in bf16, no quantization
-  - true  (low-VRAM fallback):       QLoRA with 4-bit BitsAndBytes
-
-Usage:
-    python train.py [--config config.yaml]
-
-Prerequisites:
-    pip install transformers peft accelerate datasets torch pyyaml tqdm
-    pip install bitsandbytes   # only needed when load_in_4bit=true
-
-Run prepare_data.py first to build output/train.jsonl and output/test.jsonl.
-"""
+"""LoRA and QLoRA training for laboratory-result prediction."""
 
 from __future__ import annotations
 
@@ -56,7 +41,7 @@ def load_config(path: str) -> dict:
 
 
 def build_model_and_tokenizer(cfg: dict):
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from peft import LoraConfig, get_peft_model
 
     model_path = Path(cfg["model"]["name_or_path"])
@@ -87,6 +72,8 @@ def build_model_and_tokenizer(cfg: dict):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    model_config = AutoConfig.from_pretrained(str(model_path), trust_remote_code=trust)
+    model_config = getattr(model_config, "text_config", model_config)
     bnb_cfg = cfg.get("bnb", {})
     use_4bit = bnb_cfg.get("load_in_4bit", False)
 
@@ -103,6 +90,7 @@ def build_model_and_tokenizer(cfg: dict):
         log.info("Loading model in 4-bit (QLoRA) from %s", model_path)
         model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
+            config=model_config,
             quantization_config=bnb_config,
             device_map=device_map,
             trust_remote_code=trust,
@@ -116,6 +104,7 @@ def build_model_and_tokenizer(cfg: dict):
         log.info("Loading model in %s (no quantization) from %s", dtype_name, model_path)
         model = AutoModelForCausalLM.from_pretrained(
             str(model_path),
+            config=model_config,
             device_map=device_map,
             trust_remote_code=trust,
             torch_dtype=compute_dtype,
@@ -345,7 +334,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--config", default="config/clinlab.yaml")
     args = parser.parse_args()
 
     cfg = load_config(args.config)

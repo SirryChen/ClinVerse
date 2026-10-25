@@ -42,7 +42,7 @@ def infer_rollout_tags(scores: dict, transcript: dict) -> list[str]:
         tags.append("max_turns_reached")
 
     tool_counts = transcript_tool_counts(transcript)
-    if tool_counts.get("finalize_case", 0) == 0 and transcript.get("final_answer"):
+    if transcript.get("termination_reason") == "forced_finalize":
         tags.append("forced_finalize")
     if tool_counts.get("order_tests", 0) == 0:
         tags.append("no_tests")

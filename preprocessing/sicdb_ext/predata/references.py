@@ -8,7 +8,7 @@ from typing import Optional
 
 import pandas as pd
 
-from config import REFERENCES_FILE
+from preprocessing.sicdb_ext.predata.config import REFERENCES_FILE
 
 log = logging.getLogger(__name__)
 

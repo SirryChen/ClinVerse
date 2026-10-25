@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pipeline.patient_info_units import build_patient_information_units_from_case
+from pipeline.patient_info_units import require_patient_information_units
 
 from .metrics import (
     history_collection_score,
@@ -21,20 +21,11 @@ _DEFAULT_WEIGHTS = {
 
 
 def _patient_information_units(case: dict) -> list[dict]:
-    units = case.get("patient_information_units")
-    if units is not None:
-        return units
-    views = case.get("simulation_views", {})
-    patient_view = views.get("patient_actor_view", {})
-    units = patient_view.get("patient_information_units")
-    if units is not None:
-        return units
-    return build_patient_information_units_from_case(case)
+    return require_patient_information_units(case)
 
 
 def _extend_disclosed_info_ids(target: list[str], meta: dict) -> None:
     target.extend(meta.get("disclosed_info_ids", []))
-    target.extend(meta.get("disclosed_evidence_ids", []))
 
 
 def score_transcript(transcript, case: dict, config: dict | None = None) -> dict:
@@ -47,8 +38,6 @@ def score_transcript(transcript, case: dict, config: dict | None = None) -> dict
     patient_info_units = _patient_information_units(case)
     evidence_inventory = case.get("evidence_inventory", [])
 
-    # Collect patient information IDs from hidden metadata. Older traces used
-    # disclosed_evidence_ids; keep accepting them so old fixtures still score.
     if hasattr(transcript, "turns"):
         turns = transcript.turns
         final_answer = transcript.final_answer or {}
@@ -78,14 +67,10 @@ def score_transcript(transcript, case: dict, config: dict | None = None) -> dict
     # and core.icd.to_icd10() (converts MIMIC's ICD-9 ground truth too).
     gt_icd10 = gt.get("icd10_code", "")
 
-    # Information collection is the unified patient-history collection metric.
-    # Keep the lower-level function for the weighted calculation, but expose
-    # only one score to prevent the same signal from being reported twice.
-    info_score = information_collection_score(
-        history_collection_score(collected_ids, patient_info_units)
-    )
+    h_score = history_collection_score(collected_ids, patient_info_units)
     t_score = test_order_coverage(returned_ids, evidence_inventory)
     a_score = abnormal_test_coverage(returned_abnormal_ids, evidence_inventory)
+    info_score = information_collection_score(h_score)
 
     predicted_icd10 = final_answer.get("icd10_code", "")
     cat_acc  = diagnosis_category_accuracy(predicted_icd10, gt_icd10)
@@ -99,9 +84,10 @@ def score_transcript(transcript, case: dict, config: dict | None = None) -> dict
     )
 
     return {
-        "information_collection_score": info_score,
+        "history_collection_score": h_score,
         "test_order_coverage": t_score,
         "abnormal_test_coverage": a_score,
+        "information_collection_score": info_score,
         "diagnosis_category_accuracy": cat_acc,
         "diagnosis_subtype_accuracy": sub_acc,
         "diagnosis_score": diag_score,

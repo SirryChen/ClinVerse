@@ -25,7 +25,7 @@ REPO_ROOT = HERE.parents[1]
 CLINVERSE_ROOT = REPO_ROOT
 sys.path.insert(0, str(CLINVERSE_ROOT))
 from core.config import load_yaml_config  # noqa: E402
-from pipeline.patient_info_units import build_patient_information_units_from_case  # noqa: E402
+from pipeline.patient_info_units import require_patient_information_units  # noqa: E402
 
 
 LEAK_OBJECTIVE_RE = re.compile(
@@ -77,7 +77,7 @@ def load_cases(path: Path, limit: int | None = None) -> Iterable[tuple[str, dict
 def ensure_aiu(case: dict) -> None:
     if case.get("patient_information_units"):
         return
-    units = build_patient_information_units_from_case(case)
+    units = require_patient_information_units(case)
     case["patient_information_units"] = units
     case.setdefault("simulation_views", {}).setdefault("patient_actor_view", {})[
         "patient_information_units"

@@ -6,7 +6,7 @@ Usage:
                         [--predictions-output output/predictions.jsonl]
     python evaluate.py --base-only [--baseline qwen3.5-2b|qwen3.5-27b|deepseek-v4-flash] [--max-samples 5000]
     python evaluate.py --base-only --model-path ../../../weight/Qwen3.5-27B
-    export INF_API_KEY=...   # API 基线 deepseek-v4-flash 需要
+    export CLINVERSE_LAB_API_KEY=...   # API 基线 deepseek-v4-flash 需要
 
 Lab results fall into three types, each with its own metric:
   1. Numeric   : per-test MAPE (unit-agnostic, computed within each test name)
@@ -49,7 +49,7 @@ def _is_missing(val) -> bool:
 
 
 def parse_output(text: str) -> str:
-    """Return the predicted/label value string (strips legacy [ABNORMAL] tags)."""
+    """Return the predicted/label value string (strips [ABNORMAL] tags)."""
     text = text.strip()
     return _ABNORMAL_RE.sub("", text).strip()
 
@@ -485,7 +485,7 @@ def main() -> None:
                         help="Baseline name from config.baselines (default: qwen3.5-2b)")
     parser.add_argument("--model-path",  default=None,
                         help="Override model weight path (implies --base-only)")
-    parser.add_argument("--config",      default="config.yaml")
+    parser.add_argument("--config",      default="config/clinlab.yaml")
     parser.add_argument("--test-file",   default=None, help="Override test JSONL path")
     parser.add_argument("--batch-size",  type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=None,
@@ -522,7 +522,7 @@ def main() -> None:
 
     # ── Inference ──────────────────────────────────────────────────────────────
     if model_cfg.get("backend") == "api":
-        api_key_env = model_cfg.get("api_key_env", "INF_API_KEY")
+        api_key_env = model_cfg.get("api_key_env", "CLINVERSE_LAB_API_KEY")
         api_key = os.environ.get(api_key_env)
         if not api_key:
             sys.exit(

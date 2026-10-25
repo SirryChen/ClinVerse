@@ -24,6 +24,10 @@ curated here are simply not orderable by canonical name yet — extend
 ITEM_DEFS as needed, the build is idempotent.
 """
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 
 import json
 import os
@@ -32,8 +36,8 @@ import pandas as pd
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
-REFERENCES_FILE = os.path.join(_REPO_ROOT, "dataset", "SICdb", "d_references.csv.gz")
-DATASET_DIR = os.path.join(_REPO_ROOT, "dataset", "sicdb-ext")
+REFERENCES_FILE = os.path.join(os.environ.get("CLINVERSE_SICDB_DIR", os.path.join(_REPO_ROOT, "dataset", "SICdb")), "d_references.csv.gz")
+DATASET_DIR = os.environ.get("CLINVERSE_SICDB_NORMALIZED_DIR", os.path.join(_REPO_ROOT, "data", "normalized", "sicdb-ext"))
 OUT_LAB = os.path.join(DATASET_DIR, "lab_provider_catalog.json")
 
 

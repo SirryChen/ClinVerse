@@ -9,9 +9,9 @@ import os
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", "..", ".."))
 
-BASE_MIMIC = os.path.join(_ROOT, "dataset", "mimic-iv-3.1")
-BASE_NOTE  = os.path.join(_ROOT, "dataset", "mimic-iv-note", "note")
-BASE_OUT   = os.path.join(_ROOT, "dataset", "mimic-iv-ext")
+BASE_MIMIC = os.environ.get("CLINVERSE_MIMIC_DIR", os.path.join(_ROOT, "dataset", "mimic-iv-3.1"))
+BASE_NOTE = os.environ.get("CLINVERSE_NOTE_DIR", os.path.join(_ROOT, "dataset", "mimic-iv-note", "note"))
+BASE_OUT = os.environ.get("CLINVERSE_NORMALIZED_DIR", os.path.join(_ROOT, "data", "normalized", "mimic-iv-ext"))
 
 # hosp tables (all .csv.gz)
 HOSP = os.path.join(BASE_MIMIC, "hosp")

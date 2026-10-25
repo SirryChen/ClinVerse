@@ -1,6 +1,7 @@
 """Moderator: routes actions to providers, records metadata, controls turn flow."""
 
 from __future__ import annotations
+from copy import deepcopy
 
 from .patient_actor import PatientActor
 from .exam_provider import ExamProvider
@@ -21,9 +22,12 @@ class Moderator:
         self._exam_provider = exam_provider
         self._lab_provider = lab_provider
         self.max_turns = max_turns
+        self.reset()
+
+    def reset(self) -> None:
         self._turn = 0
-        self._hidden_log: list[dict] = []
-        self._conversation_history: list[dict] = []  # for patient actor memory
+        self._hidden_log = []
+        self._conversation_history = []
 
     @property
     def turn(self) -> int:
@@ -35,11 +39,15 @@ class Moderator:
 
     def dispatch(self, function_name: str, args: dict) -> str:
         """Route a doctor function-call to the appropriate provider. Returns visible text."""
+        if function_name not in {"ask_patient", "request_physical_exam", "order_tests", "order_imaging"}:
+            raise ValueError(f"Unknown function: {function_name}")
+        if self.is_over():
+            raise RuntimeError("Turn budget exhausted")
         self._turn += 1
 
         if function_name == "ask_patient":
-            args["_conversation_history"] = self._conversation_history
-            text, meta = self._patient_actor.respond(args, self.case)
+            patient_args = {**args, "_conversation_history": deepcopy(self._conversation_history)}
+            text, meta = self._patient_actor.respond(patient_args, self.case)
             meta["turn"] = self._turn
             self._hidden_log.append(meta)
             self._conversation_history.append({"question": args.get("question", ""), "response": text})
@@ -75,12 +83,7 @@ class Moderator:
         ids = []
         for entry in self._hidden_log:
             ids.extend(entry.get("disclosed_info_ids", []))
-            ids.extend(entry.get("disclosed_evidence_ids", []))
         return list(set(ids))
-
-    def all_disclosed_evidence_ids(self) -> list[str]:
-        """Backward-compatible alias for older callers."""
-        return self.all_disclosed_info_ids()
 
     def all_returned_evidence_ids(self) -> list[str]:
         ids = []

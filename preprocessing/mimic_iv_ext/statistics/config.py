@@ -10,8 +10,8 @@ import pandas as pd
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 
-DATASET_DIR = os.path.join(_REPO_ROOT, "dataset", "mimic-iv-ext")
-MIMIC_HOSP = os.path.join(_REPO_ROOT, "dataset", "mimic-iv-3.1", "hosp")
+DATASET_DIR = os.environ.get("CLINVERSE_NORMALIZED_DIR", os.path.join(_REPO_ROOT, "data", "normalized", "mimic-iv-ext"))
+MIMIC_HOSP = os.path.join(os.environ.get("CLINVERSE_MIMIC_DIR", os.path.join(os.path.dirname(_REPO_ROOT), "dataset", "mimic-iv-3.1")), "hosp")
 OUTPUT_DIR = os.path.join(_HERE, "output")
 
 PRIMARY_DX_INDEX = os.path.join(DATASET_DIR, "primary_diagnosis_index.json")

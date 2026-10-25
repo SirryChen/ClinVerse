@@ -6,10 +6,10 @@ Output mirrors data/mimic-iv-ext/ schema (hadm_id = CaseID, subject_id = Patient
 import os
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", "..", ".."))
+_ROOT = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 
-BASE_SICDB = os.path.join(_ROOT, "dataset", "SICdb")
-BASE_OUT   = os.path.join(_ROOT, "dataset", "sicdb-ext")
+BASE_SICDB = os.environ.get("CLINVERSE_SICDB_DIR", os.path.join(_ROOT, "dataset", "SICdb"))
+BASE_OUT = os.environ.get("CLINVERSE_SICDB_NORMALIZED_DIR", os.path.join(_ROOT, "data", "normalized", "sicdb-ext"))
 
 # ── Source tables (.csv.gz) ───────────────────────────────────────────────────
 CASES_FILE        = os.path.join(BASE_SICDB, "cases.csv.gz")

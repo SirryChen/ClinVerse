@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clinverse"
-version = "0.1.0"
+version = "0.3.0"
 requires-python = ">=3.10"
 dependencies = [
     "openai>=1.30",
@@ -18,6 +18,9 @@ dependencies = [
     "httpx>=0.27",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
@@ -30,4 +33,6 @@ include = [
     "evaluation*",
     "env*",
     "doctor_train*",
+    "examples*",
+    "preprocessing*",
 ]

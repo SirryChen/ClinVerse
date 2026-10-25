@@ -12,7 +12,7 @@ from typing import Optional
 
 import pandas as pd
 
-from config import RAD_BAD_FIELDS, RAD_MODALITY_MAP, RAD_REGION_MAP
+from preprocessing.mimic_iv_ext.predata.config import RAD_BAD_FIELDS, RAD_MODALITY_MAP, RAD_REGION_MAP
 
 log = logging.getLogger(__name__)
 

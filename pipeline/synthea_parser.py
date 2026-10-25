@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import multiprocessing
-import pickle
 from datetime import datetime, date
 from pathlib import Path
 
@@ -113,6 +111,7 @@ def _parse_allergies(resources: list[dict]) -> list[dict]:
             "substance": display,
             "reactions": [rx for rx in reactions if rx],
             "criticality": r.get("criticality", ""),
+            "recorded_date": (r.get("recordedDate") or "")[:10],
         })
     return out
 
@@ -194,36 +193,3 @@ def parse_bundle(path: str | Path) -> dict | None:
     patient["observations"]  = _parse_observations(by_type.get("Observation", []))
     patient["encounters"]    = _parse_encounters(by_type.get("Encounter", []))
     return patient
-
-
-def _parse_bundle_safe(path: Path) -> dict | None:
-    try:
-        return parse_bundle(path)
-    except Exception:
-        return None
-
-
-def load_synthea_pool(pool_dir: str | Path) -> list[dict]:
-    """Load all Synthea patient bundles from pool_dir.
-
-    Uses a pickle cache next to pool_dir for fast subsequent loads.
-    Parallel-parses on first run using all available CPU cores.
-    """
-    pool_dir = Path(pool_dir)
-    cache_path = pool_dir.parent / "synthea_pool_cache.pkl"
-
-    if cache_path.exists():
-        with open(cache_path, "rb") as f:
-            return pickle.load(f)
-
-    paths = sorted(pool_dir.glob("*.json"))
-    workers = min(multiprocessing.cpu_count(), 8)
-    with multiprocessing.Pool(workers) as mp:
-        results = mp.map(_parse_bundle_safe, paths)
-
-    personas = [p for p in results if p is not None]
-
-    with open(cache_path, "wb") as f:
-        pickle.dump(personas, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return personas

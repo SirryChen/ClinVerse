@@ -1,346 +1,125 @@
-# ClinVerse: A Realistic Multi-Agent Diagnostic Environment for Training and Evaluating Medical Agents
+# ClinVerse
 
-ClinVerse is an interactive, real-data-grounded multi-agent environment for
-training and evaluating medical diagnostic agents. Unlike static medical
-question-answering benchmarks, which present most relevant evidence up front
-and primarily score the final answer, ClinVerse evaluates the complete
-diagnostic process: what an agent asks, which examinations it orders, what
-evidence it uncovers, and whether it integrates that evidence into the correct
-ICD-10 diagnosis.
+**A clinical environment for evaluating and training medical agents.**
 
-ClinVerse is built on **ClinPatient**, a scalable diagnostic patient pool of
-**150,667 cases** derived from MIMIC-IV, MIMIC-IV-Note, and SICdb. A doctor
-agent begins with only a limited patient presentation and must progressively
-collect hidden patient information and request examinations through
-open-ended interaction. The resulting trajectory is scored with reproducible,
-rule-based criteria and can then be reused as experience, memory, or
-transferable skills for agent training.
+ClinVerse combines EHR-grounded case construction, a multi-role diagnostic environment, five evaluation metrics, and episodic agent training.
 
-> **Research use only.** ClinVerse is not a medical device and must not be directly
-> used for clinical care, diagnosis, or treatment decisions without supervision.
+![ClinVerse](assets/main.png)
 
-![ClinVerse framework](assets/main.png)
-
-
-## Main Contributions
-
-- **A realistic interactive diagnostic environment.** ClinVerse supports
-  free-form consultation among six specialized roles and evaluates both
-  medical agents and human participants under the same interaction protocol.
-- **ClinPatient: 150K real-data-grounded cases.** A unified, extensible
-  pipeline transforms heterogeneous EHR sources into admission-level
-  diagnostic cases while preserving retrievable clinical evidence.
-- **Leakage-resistant patient simulation.** A dual-layer patient architecture
-  separates patient-visible knowledge from the latent physiological state,
-  while a self-check mechanism filters unsupported or privileged disclosure.
-- **Flexible examination ordering.** When an ordered result is absent from
-  the source EHR, the ClinLab physiological-state predictor estimates a
-  plausible result instead of exposing missingness as a diagnostic shortcut.
-- **Scalable rule-based evaluation.** Five process and outcome metrics measure
-  information collection, examination coverage, abnormal-finding coverage,
-  and ICD-10 diagnosis at two levels of granularity without an LLM judge or
-  case-specific expert rules.
-- **A shared evaluation and training loop.** Interaction trajectories can be
-  distilled into experience, episodic memory, or reusable skills. The
-  repository includes method-level integrations for Trace2Skill, SkillRL,
-  MemRL, and MedAgent-Zero.
-
-
-## Repository Layout
-
-```text
-ClinVerse/
-├── adapters/              # MIMIC-IV-Ext and SICdb-Ext adapters
-├── agents/                # Reference tool-calling doctor agent
-├── core/                  # Schemas, ports, registry, and configuration
-├── doctor_train/          # Rollout and non-parametric training integrations
-├── env/                   # ClinicalEnv, TaskStream, and HTTP API
-├── evaluation/            # Information-collection and diagnosis metrics
-├── experiments/           # Analysis and plotting code (results excluded)
-├── pipeline/              # Case construction and Synthea matching
-├── preprocessing/         # Raw MIMIC-IV/SICdb normalization pipelines
-├── providers/             # Patient, examination, lab, and moderator tools
-├── scripts/               # Main command-line entry points
-├── simulation/            # Reference end-to-end simulation loop
-├── synthea_extensions/    # Conditioned-generation modules and Java changes
-├── training/              # Missing-laboratory-result model training code
-├── config/
-├── assets/
-├── pyproject.toml
-└── requirements.txt
-```
-
-
-## Installation
-
-Python 3.10 or later is required.
+## Environment
 
 ```bash
 git clone https://github.com/SirryChen/ClinVerse.git
 cd ClinVerse
-
-conda create -n clinverse python=3.10 -y
+conda env create -f environment.yml
 conda activate clinverse
-pip install -e .
+cp .env.example .env
+set -a
+source .env
+set +a
 ```
 
-Configure an OpenAI or OpenAI-compatible endpoint:
+| Workflow | Environment |
+|---|---|
+| Data processing | Python 3.11, JDK 17, Git and an information-extraction endpoint |
+| Agent evaluation | Patient, doctor and ClinLab endpoints |
+| MemRL | An embedding endpoint; default model: BAAI/bge-m3 |
+| Local Qwen3-32B serving | Reference: 2 × 80 GB NVIDIA GPUs |
+| ClinLab LoRA training | Reference: 1 × 48 GB GPU, bfloat16, sequence length 4,096, batch size 1 |
+
+API clients and tests run on CPU. GPU memory use depends on precision, context length and concurrency. Use 64 GB or more of host RAM for full-dataset preprocessing. Endpoints and model names are configured in `.env` and `config/default.yaml`.
+
+## 1. Data processing
+
+| Source | Download |
+|---|---|
+| MIMIC-IV 3.1 | [PhysioNet](https://physionet.org/content/mimiciv/3.1/) |
+| MIMIC-IV-Note 2.2 | [PhysioNet](https://physionet.org/content/mimic-iv-note/2.2/) |
+| SICdb 1.0.8 | [PhysioNet](https://physionet.org/content/sicdb/1.0.8/) |
+| Synthea | [Source](https://github.com/synthetichealth/synthea) |
+
+Normalize records, build examination catalogs, generate conditioned patient backgrounds, extract information units and assemble cases:
 
 ```bash
-export CLINVERSE_API_KEY="your-api-key"
-export CLINVERSE_BASE_URL="https://api.openai.com/v1"
+python scripts/prepare_data.py \
+  --mimic-dir ../dataset/mimic-iv-3.1 \
+  --note-dir ../dataset/mimic-iv-note/2.2 \
+  --synthea-root ../synthea \
+  --setup-synthea \
+  --extractor-provider extractor \
+  --resume
+
+python scripts/split_cases.py --cases-dir data/cases --output data/splits
 ```
 
-`config/default.yaml` also contains examples for local vLLM servers. Model
-names, endpoints, timeouts, and role assignments can be changed there.
-Credentials should be supplied through environment variables and must not be
-committed.
+Use `--limit 100` for a smaller run or `--plan` to inspect the stages. Outputs are written to `data/normalized/mimic-iv-ext/`, `data/cases/` and `data/preparation/`. Split manifests group admissions by patient.
 
-## Data Preparation
+[Data processing guide](docs/data.md)
 
-The datasets must be obtained separately and used under their own licenses
-and data-use agreements. In particular, MIMIC-derived data must never be
-committed to this repository.
+## 2. Agent evaluation
 
-- [MIMIC-IV v3.1](https://physionet.org/content/mimiciv/3.1/)
-- [MIMIC-IV-Note v2.2](https://physionet.org/content/mimic-iv-note/2.2/)
-- [SICdb v1.0.8](https://physionet.org/content/sicdb/1.0.8/)
-- [Synthea](https://github.com/synthetichealth/synthea)
+An agent implements `reset(context)`, `act() -> Action` and `observe(text)`. The context contains the initial presentation, available tool schemas and turn budget. Completed scores are handled by the evaluator.
 
-The default configuration expects datasets and Synthea beside the repository:
-
-```text
-workspace/
-├── ClinVerse/
-├── dataset/
-│   ├── mimic-iv-3.1/          # credentialed source data
-│   ├── mimic-iv-note/         # credentialed source notes
-│   ├── SICdb/                 # source SICdb tables
-│   ├── mimic-iv-ext/          # generated normalized adapter data
-│   └── sicdb-ext/             # generated normalized adapter data
-└── synthea/
-    └── output_pool/
-        └── fhir/
-```
-
-Expected adapter files include normalized demographics, history of present
-illness, physical examination, laboratory results, diagnoses, medications,
-and catalog files. Paths can be changed under `datasets` and `paths` in
-`config/default.yaml`.
-
-### Normalize source datasets
-
-After placing credentialed raw data in the external `dataset/` directory,
-build the normalized adapter inputs:
+[Agent protocol](agents/interfaces.py) · [OpenAIAgent implementation](examples/openai_agent.py)
 
 ```bash
-python preprocessing/mimic_iv_ext/predata/run.py
-python preprocessing/mimic_iv_ext/predata/build_catalog.py
-
-python preprocessing/sicdb_ext/predata/run.py
-python preprocessing/sicdb_ext/predata/build_catalog.py
-```
-
-Use `--limit` with either `run.py` for a smaller pipeline smoke test. These
-commands write only to the external dataset directories shown above.
-
-### Synthea extensions
-
-Clone Synthea next to ClinVerse, deploy the supplied modules and
-conditioned-generation Java extensions, and build the JAR:
-
-```bash
-git clone https://github.com/synthetichealth/synthea.git ../synthea
-./synthea_extensions/deploy.sh --synthea-root ../synthea
-
-cd ../synthea
-./gradlew uberJar
-cd ../ClinVerse
-```
-
-Generated Synthea records belong in the external `synthea/` checkout and are
-not part of this repository.
-
-## Build Standardized Cases
-
-Build cases by combining normalized EHR admissions with an existing Synthea
-patient pool:
-
-```bash
-python scripts/build_cases.py \
-  --dataset mimic-iv-ext \
-  --limit 100 \
-  --output data/cases
-```
-
-To run conditioned Synthea generation from dataset-derived priors:
-
-```bash
-python scripts/build_conditioned_cases.py \
-  --dataset mimic-iv-ext \
-  --limit 5 \
-  --copies 10 \
-  --output data/cases
-```
-
-Audit constructed cases for matching conflicts and leakage risk:
-
-```bash
-python scripts/audit_cases.py --cases-dir data/cases
-```
-
-All generated case files are ignored by Git.
-
-## Run a Single Simulation
-
-The reference simulation uses the configured doctor agent to control
-`ClinicalEnv`:
-
-```bash
-python scripts/run_simulation.py \
-  --case data/cases/CASE_ID.json \
-  --output data/eval_results/single_case.json
-```
-
-The core in-process interface follows a Gym-like lifecycle:
-
-```python
-from env.clinical_env import ClinicalEnv
-
-env = ClinicalEnv.from_case_file(
-    "data/cases/CASE_ID.json",
-    patient_openai_config=patient_config,
-    datasets_config=datasets_config,
-)
-
-observation = env.reset()
-step = env.step(
-    "ask_patient",
-    {"question": "When did your symptoms start?", "topics": ["onset"]},
-)
-step = env.step(
-    "request_physical_exam",
-    {"components": ["abdomen"], "reason": "Evaluate the abdominal complaint"},
-)
-step = env.step(
-    "finalize_case",
-    {
-        "final_diagnosis": "Appendicitis",
-        "icd10_code": "K35",
-        "diagnosis_category": "appendicitis",
-        "diagnosis_subtype": "acute appendicitis",
-        "differential_diagnoses": ["gastroenteritis"],
-        "supporting_evidence": ["Focused history and abdominal findings"],
-    },
-)
-scores = env.score()
-```
-
-## HTTP API
-
-For agent frameworks that cannot import the Python environment directly:
-
-```bash
-python scripts/run_api_server.py --host 0.0.0.0 --port 8000
-```
-
-The service exposes:
-
-```text
-GET    /cases?split=train|test|all
-POST   /sessions
-POST   /sessions/{session_id}/step
-GET    /sessions/{session_id}/score
-DELETE /sessions/{session_id}
-```
-
-Session state is stored in memory. The API is intended for research
-experiments, not multi-worker production deployment.
-
-## Batch Evaluation
-
-Run a batch with independently selected patient, laboratory, and doctor
-providers:
-
-```bash
-python scripts/run_batch_eval.py \
-  --source mimic-iv-ext \
+python scripts/run_agent.py \
+  --agent examples.openai_agent:OpenAIAgent \
+  --case-ids-file data/splits/test.txt \
   --n 100 \
-  --patient-provider gpt-4o-mini \
-  --doctor-provider gpt-4o-mini \
-  --run-id mimic100_gpt4omini
+  --output outputs/evaluation/reference
 ```
 
-Useful controls include:
+Select another implementation with `--agent my_package.my_agent:MyAgent`. The evaluator writes trajectories, per-case scores and an aggregate summary containing **ICR ↑, TOC ↑, ATC ↑, DCA ↑ and DSA ↑**.
 
 ```bash
-# Randomized sampling with a reproducible seed
 python scripts/run_batch_eval.py \
-  --source mimic-iv-ext --n 100 --shuffle --sample-seed 2026
-
-# Resume an interrupted run
-python scripts/run_batch_eval.py \
-  --output-root data/eval_results/mimic100_gpt4omini \
-  --resume --retry-failed
+  --include-case-ids-from data/splits/test.txt \
+  --n 100 --repeats 5 \
+  --output-root outputs/benchmark/reference
 ```
 
-Each run writes per-case traces, errors, scores, metadata, and an aggregate
-summary under `data/eval_results/`. These outputs are excluded from Git.
+[Agent evaluation guide](docs/evaluation.md)
 
-## Doctor-Agent Rollouts
+## 3. Agent training
 
-Collect normalized trajectories for training or memory-based baselines:
+A trainer implements `context(episode)`, `update(record)` and `save(path)`. It receives the presentation and tools before each encounter, then learns from the completed trajectory and scores. [MemoryTrainer](examples/memory_trainer.py) implements semantic recall followed by utility-based memory selection.
 
 ```bash
-python scripts/run_doctor_rollouts.py \
-  --source mimic-iv-ext \
-  --n 100 \
-  --patient-provider gpt-4o-mini \
-  --doctor-provider gpt-4o-mini \
-  --run-id train100
+python scripts/run_agent.py \
+  --agent examples.openai_agent:OpenAIAgent \
+  --trainer examples.memory_trainer:MemoryTrainer \
+  --trainer-state outputs/training/memory.json \
+  --case-ids-file data/splits/train.txt \
+  --n 100 --output outputs/training/episodes
 ```
 
-The output includes `rollouts.jsonl`, `scores.jsonl`, summaries, errors, and
-per-case traces.
-
-For resume controls and the complete Trace2Skill, SkillRL, MemRL, and
-MedAgent-Zero workflows, see
-[doctor_train/COMMAND.md](doctor_train/COMMAND.md).
-
-## Missing-Laboratory-Result Model
-
-The provider-training code fine-tunes a local causal language model to predict
-laboratory results when a requested result is absent from the case evidence.
-Install its additional dependencies first:
+Evaluate the saved state:
 
 ```bash
-cd training/provider/mimic_iv_ext
-pip install -r requirements.txt
-
-python prepare_data.py --config config.yaml
-python train.py --config config.yaml
-python evaluate.py \
-  --config config.yaml \
-  --adapter output/checkpoints/final_adapter
-
-cd ../../..
+python scripts/run_agent.py \
+  --agent examples.openai_agent:OpenAIAgent \
+  --memory-state outputs/training/memory.json \
+  --case-ids-file data/splits/test.txt \
+  --n 100 --output outputs/evaluation/trained
 ```
 
-The training configuration points to external model and dataset directories.
-Prepared JSONL files, tokenizer caches, checkpoints, and predictions are all
-ignored by Git.
+[MemRL and custom training](docs/training.md) · [ClinLab training](docs/clinlab.md)
 
+## Interfaces
 
-## Acknowledgements
+| Interface | Entry point |
+|---|---|
+| Environment | `ClinicalEnv.reset()`, `step(tool, args)`, `score()` |
+| Agent loop | `env.runner.run_episode(env, agent)` |
+| Case collection | `TaskStream(cases_dir)` |
+| HTTP environment | `python scripts/run_api_server.py --port 8080` |
 
-ClinPatient is derived from MIMIC-IV, MIMIC-IV-Note, and SICdb and uses
-Synthea for controlled background augmentation. The training experiments
-build on Trace2Skill, SkillRL, MemRL, and MedAgent-Zero. Please cite the
-original datasets and methods when using the corresponding components.
+## Development
 
+```bash
+python -m pytest tests -q
+python scripts/package_release.py --output ../ClinVerse-source-v0.3.0.tar.gz
+```
 
-## License
-
-The code in this repository is released under the
-[Apache License 2.0](LICENSE). External datasets, models, and upstream
-projects remain subject to their own licenses and terms.
+[Apache-2.0](LICENSE)

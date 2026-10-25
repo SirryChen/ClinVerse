@@ -9,13 +9,13 @@ from typing import Callable
 
 import pandas as pd
 
-from config import (
+from preprocessing.sicdb_ext.predata.config import (
     CASES_FILE, LABORATORY_FILE, MEDICATION_FILE,
     DATA_FLOAT_H_FILE, DATA_RANGE_FILE, DATA_REF_FILE,
     CHUNK_SIZE, PE_HOURS_AFTER_ICU, VITAL_DATA_IDS,
 )
-from clinical import _s, icd_version_from_code, sex_to_gender
-from references import load_references, ref_label, ref_unit, ref_value
+from preprocessing.sicdb_ext.predata.clinical import _s, icd_version_from_code, sex_to_gender
+from preprocessing.sicdb_ext.predata.references import load_references, ref_label, ref_unit, ref_value
 
 log = logging.getLogger(__name__)
 

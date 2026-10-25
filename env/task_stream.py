@@ -31,8 +31,6 @@ class CaseRef:
 
 def _case_source(case: dict) -> Optional[str]:
     source = case.get("core_admission", {}).get("source")
-    # Legacy pre-adapter cases recorded source as "mimic-iv"; mirrors the same
-    # normalization in ClinicalEnv.from_case_file.
     if source == "mimic-iv":
         source = "mimic-iv-ext"
     return source

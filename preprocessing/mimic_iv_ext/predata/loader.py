@@ -10,7 +10,7 @@ from typing import Optional
 
 import pandas as pd
 
-from config import (
+from preprocessing.mimic_iv_ext.predata.config import (
     ADMISSIONS_FILE, PATIENTS_FILE, PRESCRIPTIONS_FILE,
     DIAGNOSES_ICD_FILE, D_ICD_DIAGNOSES_FILE,
     PROCEDURES_ICD_FILE, D_ICD_PROCEDURES_FILE,

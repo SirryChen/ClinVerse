@@ -54,3 +54,6 @@ node_modules/
 dist/
 Library/
 Build/
+
+releases/
+*.tar.gz

@@ -1,11 +1,6 @@
-"""MIMIC-IV-Ext dataset adapter. Loads dataset/mimic-iv-ext/*.csv into the
-canonical Admission schema (core.schema). This is pipeline/mimic_loader.py's
-former _load_tables/_build_admission logic, unchanged, just wrapped behind
-core.ports.DatasetAdapter and routed through admission_from_parts() so the
-icd10_code field (ICD-9->10 conversion) is computed automatically instead of
-left for every consumer to do itself.
-"""
+"""MIMIC-IV admission adapter."""
 from __future__ import annotations
+from core.icd import block
 
 import json
 import os
@@ -20,7 +15,7 @@ from core.schema import Admission, admission_from_parts
 
 from .condition_priors import extract_condition_priors
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]  # parent workspace
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../train-platform
 _DEFAULT_DATA_DIR = _REPO_ROOT / "dataset" / "mimic-iv-ext"
 
 
@@ -115,6 +110,7 @@ def _build_admission(hadm_id: str, tables: dict) -> Optional[Admission]:
             "spec_type_desc": r.get("spec_type_desc", ""),
             "valuestr": r.get("valuestr", ""),
             "antibiogram": r.get("antibiogram", ""),
+            "is_abnormal": r["is_abnormal"],
         }
         for r in _rows(tables["micro"], hadm_id)
     ]
@@ -217,7 +213,7 @@ class MimicAdapter:
             hadm_ids = hadm_ids[:limit]
         for hadm_id in hadm_ids:
             admission = _build_admission(hadm_id, tables)
-            if admission:
+            if admission and block(admission["primary_diagnosis"].get("icd10_code")):
                 yield admission
 
     def load_admission(self, case_id: str) -> Admission:

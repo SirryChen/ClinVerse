@@ -1,6 +1,7 @@
 """Records the full turn-by-turn simulation log."""
 
 from __future__ import annotations
+from copy import deepcopy
 
 import json
 from dataclasses import dataclass, field
@@ -37,14 +38,14 @@ class Transcript:
         self.turns.append(Turn(
             turn_num=turn_num,
             function_name=function_name,
-            function_args=function_args,
+            function_args=deepcopy(function_args),
             tool_call_id=tool_call_id,
             provider_response=provider_response,
-            hidden_metadata=hidden_metadata,
+            hidden_metadata=deepcopy(hidden_metadata),
         ))
 
     def set_final_answer(self, args: dict, reason: str = "finalize_case") -> None:
-        self.final_answer = args
+        self.final_answer = deepcopy(args)
         self.termination_reason = reason
 
     def to_dict(self) -> dict:

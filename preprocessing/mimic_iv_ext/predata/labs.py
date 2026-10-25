@@ -302,7 +302,7 @@ def build_micro_records_streaming(
                     spec_id   = int(first["spec_itemid"]) if pd.notna(first["spec_itemid"]) else None
                     spec_desc = str(first["spec_type_desc"]) if pd.notna(first["spec_type_desc"]) else None
                     test_name = str(first["test_name"]) if pd.notna(first["test_name"]) else None
-                    best[key] = (ctime, val, spec_id, spec_desc, test_name)
+                    best[key] = (ctime, val, spec_id, spec_desc, test_name, bool(grp["org_itemid"].notna().any()))
 
             # Collect antibiogram regardless of whether it's the first test instance
             ab_rows = grp.dropna(subset=["ab_name", "interpretation"])
@@ -315,7 +315,7 @@ def build_micro_records_streaming(
                     antibiogram[key][ab] = interp
 
     records = []
-    for k, (_, vs, spec_id, spec_desc, test_name) in best.items():
+    for k, (_, vs, spec_id, spec_desc, test_name, is_abnormal) in best.items():
         ab_str = "; ".join(
             f"{ab}={interp}" for ab, interp in sorted(antibiogram.get(k, {}).items())
         )
@@ -327,6 +327,7 @@ def build_micro_records_streaming(
             "spec_type_desc": spec_desc,
             "valuestr":      vs,
             "antibiogram":   ab_str or None,
+            "is_abnormal": is_abnormal,
         })
 
     df = pd.DataFrame(records)

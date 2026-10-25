@@ -305,7 +305,6 @@ def main() -> None:
         "finetuned": _summarize_side("finetuned", ft_records, metas, excluded, sample_cap),
     }
 
-    # Backward-compatible single-base alias
     if len(baseline_specs) == 1:
         result["base"] = baselines[baseline_specs[0][0]]
 

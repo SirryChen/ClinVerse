@@ -3,6 +3,10 @@ Generate example-json.txt from dataset/sicdb-ext/ CSV outputs.
 Usage: python data/sicdb-ext/predata/generate_example.py [--hadm-id ID ...]
 """
 from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 
 import argparse
 import json
@@ -16,8 +20,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-import config
-
+from preprocessing.sicdb_ext.predata import config
 DEFAULT_HADM_IDS = ["100023", "100027", "100130"]
 
 

@@ -1,0 +1,58 @@
+model:
+  name_or_path: weights/Qwen3.5-2B
+  max_length: 4096
+  torch_dtype: bfloat16
+  trust_remote_code: true
+  enable_thinking: false
+data:
+  mimic_data_dir: data/normalized/mimic-iv-ext
+  lab_mapping_path: data/normalized/mimic-iv-ext/lab_test_mapping.csv
+  demographics_path: data/normalized/mimic-iv-ext/patient_demographics.csv
+  hpi_path: data/normalized/mimic-iv-ext/history_of_present_illness.csv
+  pe_path: data/normalized/mimic-iv-ext/physical_examination.csv
+  labs_path: data/normalized/mimic-iv-ext/laboratory_tests.csv
+  microbiology_path: data/normalized/mimic-iv-ext/microbiology.csv
+  medications_path: data/normalized/mimic-iv-ext/discharge_medications.csv
+  icd_diagnosis_path: data/normalized/mimic-iv-ext/icd_diagnosis.csv
+  hospital_course_path: data/normalized/mimic-iv-ext/hospital_course.csv
+  discharge_diagnosis_path: data/normalized/mimic-iv-ext/discharge_diagnosis.csv
+  output_dir: outputs/clinlab/data
+  train_file: outputs/clinlab/data/train.jsonl
+  test_file: outputs/clinlab/data/test.jsonl
+  tokenize_cache_dir: outputs/clinlab/tokenize_cache
+  pretokenize_num_proc: 4
+  min_context_labs: 2
+  normal_sample_ratio: 0.05
+  train_ratio: 0.10
+  test_ratio: 0.01
+  hpi_max_chars: 500
+  pe_max_chars: 2000
+  hospital_course_max_chars: 6000
+  seed: 2026
+training:
+  output_dir: outputs/clinlab/checkpoints
+  train_sampling_strategy: random
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  gradient_checkpointing: true
+  learning_rate: 0.0001
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  logging_steps: 20
+  save_steps: 1000
+  save_total_limit: 2
+  fp16: false
+  bf16: true
+  dataloader_num_workers: 4
+  remove_unused_columns: false
+  report_to: tensorboard
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  bias: none
+  task_type: CAUSAL_LM
+bnb:
+  load_in_4bit: false

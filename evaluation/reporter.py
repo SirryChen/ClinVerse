@@ -14,15 +14,14 @@ def generate_report(traces_dir: str | Path, output_path: str | Path | None = Non
     for path in sorted(traces_dir.glob("*.json")):
         with open(path) as f:
             trace = json.load(f)
-        scores = trace.get("scores", {})
+        scores = dict(trace.get("scores", {}))
         scores["case_id"] = trace.get("case_id", path.stem)
         all_scores.append(scores)
 
-    if not all_scores:
-        return {"n": 0, "message": "No traces found."}
 
     keys = [
         "information_collection_score",
+        "history_collection_score",
         "test_order_coverage",
         "abnormal_test_coverage",
         "diagnosis_score",
