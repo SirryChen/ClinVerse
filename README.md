@@ -4,6 +4,10 @@
 
 ClinVerse combines EHR-grounded case construction, a multi-role diagnostic environment, five evaluation metrics, and episodic agent training.
 
+[![Demo](https://img.shields.io/badge/Demo-Online-4CAF50?logo=googlechrome&logoColor=white)](https://sirrychen.github.io/blogs/ClinVerse/)
+[![GitHub](https://img.shields.io/badge/GitHub-Code-181717?logo=github&logoColor=white)](https://github.com/SirryChen/ClinVerse)
+![arXiv](https://img.shields.io/badge/arXiv-Coming_Soon-b31b1b.svg?logo=arxiv)
+
 ![ClinVerse](assets/main.png)
 
 ## Environment
