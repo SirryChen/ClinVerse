@@ -6,6 +6,7 @@ ClinVerse combines EHR-grounded case construction, a multi-role diagnostic envir
 
 [![Demo](https://img.shields.io/badge/Demo-Online-4CAF50?logo=googlechrome&logoColor=white)](https://sirrychen.github.io/blogs/ClinVerse/)
 [![GitHub](https://img.shields.io/badge/GitHub-Code-181717?logo=github&logoColor=white)](https://github.com/SirryChen/ClinVerse)
+[![Hugging Face](https://img.shields.io/badge/Hugging_Face-ClinLab--2B-FFD21E?logo=huggingface&logoColor=black)](https://huggingface.co/SII-Sirry/ClinLab-2B)
 ![arXiv](https://img.shields.io/badge/arXiv-Coming_Soon-b31b1b.svg?logo=arxiv)
 
 ![ClinVerse](assets/main.png)
@@ -61,6 +62,23 @@ Use `--limit 100` for a smaller run or `--plan` to inspect the stages. Outputs a
 [Data processing guide](docs/data.md)
 
 ## 2. Agent evaluation
+
+### ClinLab weights
+
+Download [ClinLab-2B](https://huggingface.co/SII-Sirry/ClinLab-2B) and connect it to the environment:
+
+```bash
+pip install -r requirements-gpu.txt
+hf download SII-Sirry/ClinLab-2B --local-dir weights/ClinLab-2B
+python scripts/configure_local_lab.py \
+  --model weights/ClinLab-2B \
+  --mapping data/normalized/mimic-iv-ext/lab_test_mapping.csv \
+  --output config/local.yaml
+```
+
+Use `--config config/local.yaml` for evaluation and training with this checkpoint. [ClinLab setup and training](docs/clinlab.md).
+
+### Connect an agent
 
 An agent implements `reset(context)`, `act() -> Action` and `observe(text)`. The context contains the initial presentation, available tool schemas and turn budget. Completed scores are handled by the evaluator.
 

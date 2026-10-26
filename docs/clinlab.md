@@ -1,4 +1,19 @@
-# ClinLab training
+# ClinLab
+
+## Use pretrained weights
+
+[ClinLab-2B](https://huggingface.co/SII-Sirry/ClinLab-2B) contains the merged model, tokenizer and chat template.
+
+```bash
+pip install -r requirements-gpu.txt
+hf download SII-Sirry/ClinLab-2B --local-dir weights/ClinLab-2B
+python scripts/configure_local_lab.py \
+  --model weights/ClinLab-2B \
+  --mapping data/normalized/mimic-iv-ext/lab_test_mapping.csv \
+  --output config/local.yaml
+```
+
+Run evaluation or agent training with `--config config/local.yaml`.
 
 ## Environment and base model
 

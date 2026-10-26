@@ -1,5 +1,7 @@
 # Agent evaluation
 
+Use [ClinLab-2B](https://huggingface.co/SII-Sirry/ClinLab-2B) with the [local checkpoint setup](clinlab.md#use-pretrained-weights). Add `--config config/local.yaml` to the commands below to use the downloaded checkpoint.
+
 ## Agent protocol
 
 `agents/interfaces.py` defines `EpisodeContext`, `Action` and `DoctorAgent`.

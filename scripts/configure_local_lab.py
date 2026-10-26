@@ -8,13 +8,18 @@ def main():
     parser = argparse.ArgumentParser(description="Configure a local ClinLab checkpoint")
     parser.add_argument("--config", default="config/default.yaml")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--adapter", required=True)
+    parser.add_argument("--adapter", help="Optional LoRA adapter directory")
     parser.add_argument("--mapping", default="data/normalized/mimic-iv-ext/lab_test_mapping.csv")
     parser.add_argument("--output", default="config/local.yaml")
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     lab = cfg["llm_providers"]["lab"]
-    for key, value in {"model_path": args.model, "adapter_path": args.adapter, "lab_mapping_path": args.mapping}.items():
+    paths = {"model_path": args.model, "lab_mapping_path": args.mapping}
+    if args.adapter:
+        paths["adapter_path"] = args.adapter
+    else:
+        lab.pop("adapter_path", None)
+    for key, value in paths.items():
         path = Path(value).resolve()
         if not path.exists():
             raise FileNotFoundError(path)
