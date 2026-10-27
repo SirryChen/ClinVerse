@@ -145,3 +145,16 @@ python scripts/package_release.py --output ../ClinVerse-source-v0.3.0.tar.gz
 ```
 
 [Apache-2.0](LICENSE)
+
+## Citation
+
+If our work is useful for you, please cite as:
+
+```bibtex
+@article{chen2026clinverse,
+  title={ClinVerse: A Realistic Multi-Agent Diagnostic Environment for Training and Evaluating Medical Agents},
+  author={Chen, Sirry and Chen, Fangke and Ding, Xuanwen and Chen, Wei and Wei, Zhongyu},
+  journal={arXiv preprint arXiv:2610.34878},
+  year={2026}
+}
+```
