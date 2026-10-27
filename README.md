@@ -7,7 +7,7 @@ ClinVerse combines EHR-grounded case construction, a multi-role diagnostic envir
 [![Demo](https://img.shields.io/badge/Demo-Online-4CAF50?logo=googlechrome&logoColor=white)](https://sirrychen.github.io/blogs/ClinVerse/)
 [![GitHub](https://img.shields.io/badge/GitHub-Code-181717?logo=github&logoColor=white)](https://github.com/SirryChen/ClinVerse)
 [![Hugging Face](https://img.shields.io/badge/Hugging_Face-ClinLab--2B-FFD21E?logo=huggingface&logoColor=black)](https://huggingface.co/SII-Sirry/ClinLab-2B)
-![arXiv](https://img.shields.io/badge/arXiv-Coming_Soon-b31b1b.svg?logo=arxiv)
+[![arXiv](https://img.shields.io/badge/arXiv-2610.34878-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/2610.34878)
 
 ![ClinVerse](assets/main.png)
 
