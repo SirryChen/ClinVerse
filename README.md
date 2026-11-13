@@ -1,8 +1,8 @@
-# ClinVerse
+# ClinVerse: A Realistic Multi-Agent Diagnostic Environment for Training and Evaluating Medical Agents
 
-**A clinical environment for evaluating and training medical agents.**
+> ⭐ Accepted by KDD 2027 (Oral)
 
-ClinVerse combines EHR-grounded case construction, a multi-role diagnostic environment, five evaluation metrics, and episodic agent training.
+ClinVerse is an EHR-grounded multi-agent environment for training and evaluating medical agents through multi-turn clinical encounters. It combines dual-layer patient simulation, ClinLab-assisted examination results, five-dimensional evaluation, and agent self-evolution.
 
 [![Demo](https://img.shields.io/badge/Demo-Online-4CAF50?logo=googlechrome&logoColor=white)](https://sirrychen.github.io/blogs/ClinVerse/)
 [![GitHub](https://img.shields.io/badge/GitHub-Code-181717?logo=github&logoColor=white)](https://github.com/SirryChen/ClinVerse)
