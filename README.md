@@ -11,13 +11,17 @@ ClinVerse is an EHR-grounded multi-agent environment for training and evaluating
 
 ![ClinVerse](assets/main.png)
 
-## News
+<a name="news"></a>
+
+## 📰 News
 
 - **Nov 2026:** ClinVerse was accepted to **KDD 2027** for an **oral presentation**.
 - **Oct 2026:** Expanded the benchmark to cover more online self-evolution and recursive self-improvement (RSI) methods, compared training approaches, and publicly released the paper and code.
 - **Jun 2026:** Completed the initial ClinVerse environment, evaluated existing models and offline training methods, and drafted the first version of the paper.
 
-## Environment
+<a name="environment"></a>
+
+## ⚙️ Environment
 
 ```bash
 git clone https://github.com/SirryChen/ClinVerse.git
@@ -40,7 +44,9 @@ set +a
 
 API clients and tests run on CPU. GPU memory use depends on precision, context length and concurrency. Use 64 GB or more of host RAM for full-dataset preprocessing. Endpoints and model names are configured in `.env` and `config/default.yaml`.
 
-## 1. Data processing
+<a name="1-data-processing"></a>
+
+## 📦 1. Data processing
 
 | Source | Download |
 |---|---|
@@ -67,7 +73,9 @@ Use `--limit 100` for a smaller run or `--plan` to inspect the stages. Outputs a
 
 [Data processing guide](docs/data.md)
 
-## 2. Agent evaluation
+<a name="2-agent-evaluation"></a>
+
+## 📊 2. Agent evaluation
 
 ### ClinLab weights
 
@@ -109,7 +117,9 @@ python scripts/run_batch_eval.py \
 
 [Agent evaluation guide](docs/evaluation.md)
 
-## 3. Agent training
+<a name="3-agent-training"></a>
+
+## 🧠 3. Agent training
 
 A trainer implements `context(episode)`, `update(record)` and `save(path)`. It receives the presentation and tools before each encounter, then learns from the completed trajectory and scores. [MemoryTrainer](examples/memory_trainer.py) implements semantic recall followed by utility-based memory selection.
 
@@ -134,7 +144,9 @@ python scripts/run_agent.py \
 
 [MemRL and custom training](docs/training.md) · [ClinLab training](docs/clinlab.md)
 
-## Interfaces
+<a name="interfaces"></a>
+
+## 🔌 Interfaces
 
 | Interface | Entry point |
 |---|---|
@@ -143,7 +155,9 @@ python scripts/run_agent.py \
 | Case collection | `TaskStream(cases_dir)` |
 | HTTP environment | `python scripts/run_api_server.py --port 8080` |
 
-## Development
+<a name="development"></a>
+
+## 🛠️ Development
 
 ```bash
 python -m pytest tests -q
@@ -152,7 +166,9 @@ python scripts/package_release.py --output ../ClinVerse-source-v0.3.0.tar.gz
 
 [Apache-2.0](LICENSE)
 
-## Citation
+<a name="citation"></a>
+
+## 📜 Citation
 
 If our work is useful for you, please cite as:
 
