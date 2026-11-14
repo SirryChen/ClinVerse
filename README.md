@@ -13,8 +13,8 @@ ClinVerse is an EHR-grounded multi-agent environment for training and evaluating
 
 ## News
 
+- **Nov 2026:** ClinVerse was accepted to **KDD 2027** for an **oral presentation**.
 - **Oct 2026:** Expanded the benchmark to cover more online self-evolution and recursive self-improvement (RSI) methods, compared training approaches, and publicly released the paper and code.
-- **Sep 2026:** ClinVerse was accepted to **KDD 2027** for an **oral presentation**.
 - **Jun 2026:** Completed the initial ClinVerse environment, evaluated existing models and offline training methods, and drafted the first version of the paper.
 
 ## Environment
